@@ -1,0 +1,12 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Net::Statsd;
+
+$Net::Statsd::HOST = 'localhost';
+$Net::Statsd::PORT = 8125;
+
+Net::Statsd::increment('test.count');
+Net::Statsd::timing('test.query', 280);
+Net::Statsd::timing('test.query', 170);

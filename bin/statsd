@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use lib '../lib';
+use Net::Statsd::Server;
+
+my $statsd = Net::Statsd::Server->new();
+
+$statsd->start_server();
