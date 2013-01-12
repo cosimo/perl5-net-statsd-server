@@ -1,11 +1,13 @@
 package Net::Statsd::Server;
 
 # Use statements {{{
+
 use strict;
 use warnings;
 
 use AnyEvent;
 use AnyEvent::Handle;
+use AnyEvent::Handle::UDP;
 use AnyEvent::Log;
 use AnyEvent::Socket;
 
@@ -13,124 +15,123 @@ use Data::Dump;
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use JSON::XS ();
 use POSIX qw(:errno_h :sys_wait_h);
+use Socket;
 use Time::HiRes ();
+
+use Net::Statsd::Server::Backend;
+use Net::Statsd::Server::Metrics;
 
 # }}}
 
-# Constants {{{
+# Constants and global variables {{{
 
 use constant {
-    DEBUG                  => 1,
-    DEFAULT_CONFIG_FILE    => 'dConfig.js',
-    DEFAULT_FLUSH_INTERVAL => 10,
-    DEFAULT_LOG_LEVEL      => 'notice',
+  DEBUG                  => 1,
+  DEFAULT_CONFIG_FILE    => 'localConfig.js',
+  DEFAULT_FLUSH_INTERVAL => 10000,
+  DEFAULT_LOG_LEVEL      => 'notice',
 };
+
+our $VERSION = '0.01';
+our $logger = DEBUG
+    ? (AnyEvent::Log::logger trace => \my $trace)
+    : sub {};
 
 # }}}
 
 # AnyEvent logging setup {{{
 
-$AnyEvent::Log::FILTER->level(DEFAULT_LOG_LEVEL);
+## Ineffective with syslog collector
+#$AnyEvent::Log::FILTER->level(DEFAULT_LOG_LEVEL);
 
 # Syslog logging works commenting out the FILTER->level line
 $AnyEvent::Log::COLLECT->attach(
     AnyEvent::Log::Ctx->new(
-        level         => "critical",
+        level         => DEFAULT_LOG_LEVEL,
         log_to_syslog => "user",
     )
 );
 
 # }}}
 
-# Signals handling {{{
-
-$SIG{HUP} = \&reload_config;
-
-# }}}
-
-my $start = [ Time::HiRes::gettimeofday ];
-my $flush_interval = 1;
-
 sub new {
+  my ($class, $opt) = @_;
+  $opt ||= {};
+  $class = ref $class || $class;
 
   my $startup_time = time();
 
   # Initialize data structures with defaults for statsd stats
-  my $srv_context = {
-    keyCounter => {},
-    counters   => {
-      "statsd.packets_received" => 0,
-      "statsd.bad_lines_seen"   => 0,
-    },
-    stats => {
+  my $self = {
+
+    startup_time  => $startup_time,
+    start_time_hi => [Time::HiRes::gettimeofday],
+
+    server        => undef,
+    mgmtServer    => undef,
+
+    config        => undef,
+    stats         => {
       messages => {
         "last_msg_seen"  => $startup_time,
         "bad_lines_seen" => 0,
       }
     },
-    timers        => {},
-    gauges        => {},
-    sets          => {},
-    counter_rates => {},
-    timer_data    => {},
-    pctThreshold  => undef,
-    startup_time  => scalar(time()),
-    backendEvents => [],
+    metrics       => Net::Statsd::Server::Metrics->new(),
+
     debugInt      => undef,
     flushInterval => undef,
     keyFlushInt   => undef,
-    server        => undef,
-    mgmtServer    => undef,
-    config        => undef,
-    logger        => sub { warn(@_); },
+
+    backends      => [],
+    logger         => $logger,
   };
 
-  my $self = {
-    server_context => $srv_context,
-    startup_time   => $startup_time,
-  };
+  $self->{$_} = $opt->{$_}
+    for keys %{ $opt };
 
-  bless $self;
+  bless $self, $class;
 }
 
-sub _setup_timers {
-  my ($self) = @_;
-
-  my $flush_interval = $self->config->{flushInterval}
-    || DEFAULT_FLUSH_INTERVAL;
-
-  $self->{_timers}->{flush} =
-    AE::timer $flush_interval, $flush_interval, \&flush_metrics;
-  return;
+sub logger {
+    $_[0]->{logger};
 }
 
 sub config_defaults {
   return {
     "debug" => 0,
-    "debugInterval" => 10000,      # ms
-    "graphitePort" => 2003,
-    "port" => 8125,
-    "address" => "0.0.0.0",
-    "mgmt_port" => 8126,
-    "mgmt_address" => "0.0.0.0",
-    "flushInterval" => 10000,      # ms
-    "keyFlush" => {
-      "interval" => 10,            # s
-      "percent"  => 100,
-      "log"      => "",            # FIXME What's this?
-    },
-    "log" => {
-    },
+    "debugInterval" => 10000,                  # ms
+    "graphitePort"  => 2003,
+    "port"          => 8125,
+    "address"       => "0.0.0.0",
+    "mgmt_port"     => 8126,
+    "mgmt_address"  => "0.0.0.0",
+    "flushInterval" => DEFAULT_FLUSH_INTERVAL, # ms
+    #"keyFlush" => {
+    #  "interval" => 10,                        # s
+    #  "percent"  => 100,
+    #  "log"      => "",            # FIXME What's this?
+    #},
+    #"log" => {
+    #},
     "percentThreshold" => 90,
     "dumpMessages" => 0,
     "backends" => [
-      "Net::Statsd::Backend::Graphite"
+      "graphite"
     ],
   };
 }
 
+sub _start_time_hi {
+  return $_[0]->{start_time_hi};
+}
+
 sub config {
   my ($self, $config_file) = @_;
+
+  if (exists $self->{config} && defined $self->{config}) {
+    return $self->{config};
+  }
 
   $config_file ||= $self->default_config_file();
 
@@ -149,6 +150,10 @@ sub config {
   my $json = JSON::XS->new->relaxed->utf8;
   my $conf_hash = $json->decode($conf_json);
 
+  # Flatten JSON booleans to avoid calls to JSON::XS::bool
+  # in the performance-critical code paths
+  $conf_hash->{dumpMessages} = !! $conf_hash->{dumpMessages};
+
   # Poor man's Hash::Merge
   for (keys %{ $defaults }) {
     if (! exists $conf_hash->{$_}) {
@@ -156,12 +161,327 @@ sub config {
     }
   }
 
-  return $conf_hash;
+  return $self->{config} = $conf_hash;
+}
 
+sub counters {
+  $_[0]->{metrics}->counters;
 }
 
 sub default_config_file {
-  return DEFAULT_CONFIG_FILE;
+  DEFAULT_CONFIG_FILE;
+}
+
+sub flush_metrics {
+  my ($self) = @_;
+  my $flush_start_time = time;
+  AE::log notice => "flush_metrics";
+  my $flush_interval = $self->config->{flushInterval};
+  my $metrics = $self->metrics->process($flush_interval);
+  $self->foreach_backend(sub {
+    $_[0]->flush($flush_start_time, $metrics);
+  });
+  return;
+}
+
+sub gauges {
+  return $_[0]->{metrics}->{gauges};
+}
+
+# This is the performance-critical section of Net::Statsd::Server.
+# Everything below has been optimised for performance rather than
+# legibility or transparency. Be careful.
+
+sub handle_client_packet {
+  my ($self, $request) = @_;
+
+  my $config   = $self->{config};
+  my $metrics  = $self->{metrics};
+  my $counters = $metrics->{counters};
+  my $stats    = $self->{stats};
+
+  $counters->{"statsd.packets_received"}++;
+
+  # TODO backendEvents.emit('packet', msg, rinfo);
+
+  my @metrics = split("\n", $request);
+
+  my $dump_messages = $config->{dumpMessages};
+  my $must_count_keys = exists $config->{keyFlushInterval}
+    && $config->{keyFlushInterval} > 0;
+
+  for my $m (@metrics) {
+
+    #AE::log(debug => $m) if $dump_messages;
+
+    my @bits = split(":", $m);
+    my $key = shift @bits;
+
+    $key =~ y{/ }{_-}s;
+    $key =~ y{a-zA-Z0-9\-\.}{}cd;
+
+    # Not very clear here. Etsy's code was doing this differently
+    if ($must_count_keys) {
+      my $key_counter = $metrics->{keyCounter};
+      $key_counter->{$key}++;
+    }
+
+    push @bits, "1" if 0 == @bits;
+
+    for my $i (0..$#bits) {
+
+      my $sample_rate = 1;
+      my @fields = split(/\|/, $bits[$i]);
+
+      #AE::log warn => "\@fields = ['" . join("', '", @fields) . "']";
+
+      if (! defined $fields[1] || $fields[1] eq "") {
+        AE::log warn => "Bad line: $bits[$i] in msg \"$m\"";
+        $counters->{"statsd.bad_lines_seen"}++;
+        $stats->{"messages"}->{"bad_lines_seen"}++;
+        next;
+      }
+
+      my $value = $fields[0] || 0;
+      my $unit = $fields[1];
+      for ($unit) {
+        s{^\s*}{};
+        s{\s*$}{};
+      }
+
+      # Timers
+      if ($unit eq "ms") {
+        my $timers = $metrics->{timers};
+        $timers->{$key} ||= [];
+        push @{ $timers->{$key} }, $value;
+      }
+
+      # Gauges
+      elsif ($unit eq "g") {
+        my $gauges = $metrics->{gauges};
+        $gauges->{$key} = $value;
+      }
+
+      # Sets
+      elsif ($unit eq "s") {
+        # Treat set as a normal hash with undef keys
+        # to minimize memory consumption *and* insertion speed
+        my $sets = $metrics->{sets};
+        $sets->{$key} ||= {};
+        $sets->{$key}->{$value} = undef;
+      }
+
+      # Counters
+      else {
+        if (defined $fields[2]) {
+          if ($fields[2] =~ m{^\@([\d\.]+)}) {
+            $sample_rate = $1 + 0;
+          }
+          else {
+            AE::log warn => "Bad line: $bits[$i] in msg \"$m\"; has invalid sample rate";
+            $counters->{"statsd.bad_lines_seen"}++;
+            $stats->{"messages"}->{"bad_lines_seen"}++;
+            next;
+          }
+        }
+        $counters->{$key} ||= 0;
+        $value ||= 1;
+        $value /= $sample_rate;
+        $counters->{$key} += $value;
+      }
+    }
+  } 
+
+  $stats->{"messages"}->{"last_msg_seen"} = time();
+}
+
+sub handle_manager_command {
+  my ($self, $handle, $request) = @_;
+  my @cmdline = split(" ", trim($request));
+  my $cmd = shift @cmdline;
+  my $reply;
+
+  AE::log notice => "Mgmt command is '$cmd' (req=$request)";
+
+  if ($cmd eq "help") {
+      $reply = (
+        "Commands: stats, counters, timers, gauges, delcounters, deltimers, delgauges, quit\015\012\015\012"
+      );
+  }
+  elsif ($cmd eq "stats") {
+      my $now = time;
+      my $uptime = $now - $self->{startup_time};
+      $reply = "uptime: $uptime\n";
+
+      # Loop through the base stats
+      my $stats = $self->stats;
+
+      for my $group (keys %{$stats}) {
+        for my $metric (keys %{$stats->{$group}}) {
+          my $val = $stats->{$group}->{$metric};
+          my $delta = $metric =~ m{^last_}
+            ? $now - $val
+            : $val;
+          $reply .= "${group}.${metric}: ${delta}\n";
+        }
+      }
+
+      # TODO notify/gather backends
+      #
+      #$backendEvents->once(
+      #  'status',
+      #  sub {
+      #    my $writeCb = shift;
+      #    $stream->write("END\n\n");
+      #  }
+      #);
+
+      # Let each backend contribute its status
+      #$backendEvents->emit(
+      #  'status',
+      #  sub {
+      #    my ($err, $name, $stat, $val) = @_;
+      #    if ($err) {
+      #      warn("Failed to read stats for backend $name: $err");
+      #    }
+      #    else {
+      #      $stat_writer->($name, $stat, $val);
+      #    }
+      #  }
+      #);
+
+      $reply .= "END\n\n";
+  }
+  elsif ($cmd eq "counters") {
+      my $counters = $self->counters;
+      $reply = ("$counters\nEND\n\n");
+  }
+  elsif ($cmd eq "timers") {
+      my $timers = $self->timers;
+      $reply = ("$timers\nEND\n\n");
+  }
+  elsif ($cmd eq "gauges") {
+      my $gauges = $self->gauges;
+      $reply = ("$gauges\nEND\n\n");
+  }
+  elsif ($cmd eq "delcounters") {
+      my $counters = $self->counters;
+      for my $name (@cmdline) {
+          delete $counters->{$name};
+          $reply .= "deleted: $name\n";
+      }
+      $reply .= "END\n\n";
+  }
+  elsif ($cmd eq "deltimers") {
+      my $timers = $self->timers;
+      for my $name (@cmdline) {
+          delete $timers->{$name};
+          $reply .= "deleted: $name\n";
+      }
+      $reply .= "END\n\n";
+  }
+  elsif ($cmd eq "delgauges") {
+      my $gauges = $self->gauges;
+      for my $name (@cmdline) {
+          delete $gauges->{$name};
+          $reply .= "deleted: $name\n";
+      }
+      $reply .= "END\n\n";
+  }
+  elsif ($cmd eq "quit") {
+      undef $reply;
+      $handle->destroy();
+  }
+  else {
+      $reply = "ERROR\n";
+  }
+  return $reply;
+}
+
+sub handle_manager_connection {
+  my ($self, $handle, $line) = @_;
+  AE::log notice => "Received mgmt command [$line]";
+  if (my $reply = $self->handle_manager_command($handle, $line)) {
+    AE::log notice => "Sending mgmt reply [$reply]";
+    $handle->push_write($reply);
+    # Accept a new command on the same connection
+    $handle->push_read(line => sub {
+      handle_manager_connection($self, @_)
+    });
+  }
+  else {
+    AE::log notice => "Shutting down socket";
+    $handle->push_write("\n");
+    $handle->destroy;
+  }
+}
+
+sub init_backends {
+  my ($self) = @_;
+  my $backends = $self->config->{backends};
+  if (! $backends or ref $backends ne 'ARRAY') {
+    die "At least one backend is needed in your configuration";
+  }
+  for my $backend (@{ $backends }) {
+    my $pkg = $backend;
+    if ($backend =~ m{^ (\w+) $}x) {
+      $pkg = "Net::Statsd::Server::Backend::${pkg}";
+    }
+    my $mod = $pkg;
+    $mod =~ s{::}{/}g;
+    $mod .= ".pm";
+    eval {
+      require $mod ; 1
+    } or do {
+      AE::log error => "Backend ${backend} failed to load: $@";
+      next;
+    };
+    $self->register_backend($pkg);
+  }
+}
+
+sub metrics {
+  $_[0]->{metrics};
+}
+
+sub register_backend {
+  my ($self, $backend) = @_;
+  $self->{backends} ||= [];
+  my $backend_instance = $backend->new(
+    $self->_start_time_hi, $self->config,
+  );
+  push @{ $self->{backends} }, $backend_instance;
+}
+
+sub foreach_backend {
+  my ($self, $callback) = @_;
+  my $backends = $self->{backends} || [];
+  for my $obj (@{ $backends }) {
+    $callback->($obj);
+  }
+}
+
+sub reload_config {
+  my ($self) = @_;
+  delete $self->{config};
+  AE::log warn => "Received SIGHUP: reloading configuration";
+  return $self->{config} = $self->config();
+}
+
+sub setup_timer {
+  my ($self) = @_;
+
+  my $flush_interval = $self->config->{flushInterval}
+    || DEFAULT_FLUSH_INTERVAL;
+
+  $flush_interval = $flush_interval / 1000;
+  AE::log notice => "metrics flush will happen every ${flush_interval}s";
+
+  my $flush_t = AE::timer $flush_interval, $flush_interval, sub {
+    $self->flush_metrics
+  };
+
+  return $flush_t;
 }
 
 sub start_server {
@@ -177,269 +497,68 @@ sub start_server {
   my $mgmt_host = $config->{mgmt_address} || '0.0.0.0';
   my $mgmt_port = $config->{mgmt_port}    || 8126;
 
-  AnyEvent::Socket::tcp_server(
-    '0.0.0.0', 8125,
-    #$host => $port,
-    sub { incoming_statsd_connection($self, @_) },
+  $self->init_backends();
+
+  # Statsd clients interface (UDP)
+  $self->{server} = AnyEvent::Handle::UDP->new(
+    bind => [$host, $port],
+    on_recv => sub {
+      my ($data, $ae_handle, $client_addr) = @_;
+      #AE::log debug => "Got data=$data self=$self";
+      my $reply = $self->handle_client_packet($data);
+      $ae_handle->push_send($reply, $client_addr);
+    },
   );
 
-  AnyEvent::Socket::tcp_server(
-    $mgmt_host => $mgmt_port,
-    sub { incoming_manager_connection($self, @_) },
-  );
+  # Management interface (TCP, for 'stats' command, etc...)
+  $self->{mgmtServer} = AnyEvent::Socket::tcp_server $mgmt_host, $mgmt_port, sub {
+    my ($fh, $host, $port) = @_
+      or die "Unable to connect: $!";
 
-  AE::log notice => "statsd server starting on ${host}:${port} (${AnyEvent::MODEL})";
-  AE::log notice => "manager interface on ${mgmt_host}:${mgmt_port})";
+    my $handle; $handle = AnyEvent::Handle->new(
+      fh => $fh,
+      on_error => sub {
+        AE::log error => $_[2],
+        $_[0]->destroy;
+      },
+      on_eof => sub {
+        $handle->destroy;
+        AE::log info => "Done.",
+      },
+    );
 
+    $handle->push_read(line => sub {
+      handle_manager_connection($self, @_)
+    });
+  };
+
+  AE::log notice => "statsd server started on ${host}:${port} (v${VERSION} based on ${AnyEvent::MODEL})";
+  AE::log notice => "manager server started on ${mgmt_host}:${mgmt_port})";
+
+  my $ti = $self->setup_timer;
+
+  # This will block waiting for
+  # incoming connections (TCP) or packets (UDP)
   my $cv = AE::cv;
   $cv->recv();
-
-}
-
-sub delete_client {
-  my $client_info = shift;
-  $client_info->{handle}->destroy();
-  delete @$client_info{qw(handle fh fd)};
-}
-
-sub flush_metrics {
-  my (@shit) = @_;
-  AE::log warn => join("", @shit);
-  my $TimeTaken = Time::HiRes::tv_interval($start);
-  AE::log warn => "Elapsed time since start: $TimeTaken";
-}
-
-sub handle_packet {
-  my ($self, $client_info) = @_;
-
-  my $request = $client_info->{request};
-  my ($cmd, @args) = split m{,}, $request;
-
-  my $handle = $client_info->{handle};
-  AE::log warn => "(statsd) handle=$handle";
-
-  if ($cmd ne 'x') {
-    reply($client_info, $cmd);
-  } else {
-    warn "Bad command - $cmd";
-    delete_client($client_info);
-  }
-}
-
-sub incoming_statsd_connection {
-  my ($self, $fh) = @_;
-
-  my $client_info = {
-    fh => $fh,
-    fd => fileno($fh),
-    connect_time => time(),
-  };
-
-  AE::log notice => "Got client connection: $client_info->{fd}";
-
-  my $handle = AnyEvent::Handle->new(
-    fh => $fh,
-    on_error => sub { on_socket_error($client_info, @_) },
-  );
-  AE::log notice => "(statsd) Created new AE handle: $handle";
-
-  $client_info->{handle} = $handle;
-  AE::log notice => "About to wait for a line";
-
-  $handle->push_read(line => sub {
-    my (undef, $request) = @_;
-    warn("Read command from client cfd=$client_info->{fd}: $request");
-    $client_info->{request} = $request;
-    handle_packet($self, $client_info);
-  });
-}
-
-sub incoming_manager_connection {
-  my ($self, $fh) = @_;
-
-  my $client_info = {
-    fh => $fh,
-    fd => fileno($fh),
-    connect_time => time(),
-  };
-
-  AE::log notice => "Got manager connection: $client_info->{fd}";
-
-  my $handle = AnyEvent::Handle->new(
-    fh => $fh,
-    on_error => sub { on_socket_error($client_info, @_) },
-  );
-  AE::log notice => "(mgmt) Created new AE handle: $handle";
-
-  $client_info->{handle} = $handle;
-  AE::log notice => "About to wait for a line";
-
-  $handle->push_read(line => sub {
-    my (undef, $request) = @_;
-    warn("Read mgmt command from client cfd=$client_info->{fd}: $request");
-    $client_info->{request} = $request;
-    handle_management_command($self, $client_info);
-  });
-}
-
-sub on_socket_error {
-  my ($client_info, undef, $fatal, $msg) = @_;
-  if ($! == EPIPE) {
-    my $open_time = time() - $client_info->{connect_time};
-    warn("Client dropped connection fd=$client_info->{Fd} after $open_time seconds");
-  }
-  else {
-    warn("Got error '$msg' on client connection fd=$client_info->{fd}");
-  }
-  warn("Client request was: $client_info->{request}");
-  delete_client($client_info);
-}
-
-sub reload_config {
-}
-
-sub reply {
-  my ($client_info, $reply) = @_;
-
-  my $client_handle = $client_info->{handle}
-    or die "Undefined client handle for fd=$client_info->{fd}";
-
-  $client_handle->push_write($reply);
-  $client_handle->push_shutdown();
-
-  # Cleanup all references once we've written the response
-  $client_handle->on_drain(sub {
-    $client_handle = undef;
-    delete_client($client_info);
-  });
-}
-
-sub handle_management_command {
-    my ($self, $client_info) = @_;
-    my $data = $client_info->{request};
-    my @cmdline = split(" ", trim($data));
-    my $cmd = shift @cmdline;
-    if ($cmd eq "help") {
-        reply($client_info,
-          "Commands: stats, counters, timers, gauges, delcounters, deltimers, delgauges, quit\n\n"
-        );
-    }
-    elsif ($cmd eq "stats") {
-        my $now    = time;
-        my $uptime = $now - $self->{startup_time};
-        my $reply = "uptime: $uptime\n";
-
-        # Loop through the base stats
-        my $stats = $self->stats;
-
-        for my $group (keys %{$stats}) {
-          for my $metric (keys %{$stats->{$group}}) {
-            my $val = $stats->{$group}->{$metric};
-            my $delta = $metric =~ m{^last_}
-              ? $now - $val
-              : $val;
-            $reply .= "${group}.${metric}: ${delta}\n";
-          }
-        }
-
-        reply($client_info, $reply);
-
-        #$backendEvents->once(
-        #  'status',
-        #  sub {
-        #    my $writeCb = shift;
-        #    $stream->write("END\n\n");
-        #  }
-        #);
-
-        # Let each backend contribute its status
-        #$backendEvents->emit(
-        #  'status',
-        #  sub {
-        #    my ($err, $name, $stat, $val) = @_;
-        #    if ($err) {
-        #      warn("Failed to read stats for backend $name: $err");
-        #    }
-        #    else {
-        #      $stat_writer->($name, $stat, $val);
-        #    }
-        #  }
-        #);
-    }
-    elsif ($cmd eq "counters") {
-        my $counters = $self->counters;
-        reply($client_info, "$counters\nEND\n\n");
-    }
-    elsif ($cmd eq "timers") {
-        my $timers = $self->timers;
-        reply($client_info, "$timers\nEND\n\n");
-    }
-    elsif ($cmd eq "gauges") {
-        my $gauges = $self->gauges;
-        reply($client_info, "$gauges\nEND\n\n");
-    }
-    elsif ($cmd eq "delcounters") {
-        my $counters = $self->counters;
-        for my $name (@cmdline) {
-            delete $counters->{$name};
-            reply($client_info, "deleted: $name\n");
-        }
-        reply($client_info, "END\n\n");
-    }
-    elsif ($cmd eq "deltimers") {
-        my $timers = $self->timers;
-        for my $name (@cmdline) {
-            delete $timers->{$name};
-            reply($client_info, "deleted: $name\n");
-        }
-        reply($client_info, "END\n\n");
-    }
-    elsif ($cmd eq "delgauges") {
-        my $gauges = $self->gauges;
-        for my $name (@cmdline) {
-            delete $gauges->{$name};
-            reply($client_info, "deleted: $name\n");
-        }
-        reply($client_info, "END\n\n");
-    }
-    elsif ($cmd eq "quit") {
-        delete_client($client_info);
-    }
-    else {
-        reply($client_info, "ERROR\n");
-    }
-}
-
-sub counters {
-  my ($self) = @_;
-  return $self->ctx->{counters};
-}
-
-sub timers {
-  my ($self) = @_;
-  return $self->ctx->{timers};
-}
-
-sub gauges {
-  my ($self) = @_;
-  return $self->ctx->{gauges};
-}
-
-sub ctx {
-  my ($self) = @_;
-  return $self->{server_context};
 }
 
 sub stats {
-  my ($self) = @_;
-  return $self->ctx->{stats};
+  $_[0]->{stats};
+}
+
+sub timers {
+  $_[0]->{metrics}->{timers};
 }
 
 sub trim {
-  my $str = shift;
-  $str =~ s{^\s*}{};
-  $str =~ s{\s*$}{};
-  return $str;
+  $_[0] =~ s{^\s*}{};
+  $_[0] =~ s{\s*$}{};
+  return $_[0];
+}
+
+sub sets {
+  $_[0]->{metrics}->sets;
 }
 
 1;
