@@ -4,7 +4,7 @@ package Net::Statsd::Server::Backend::Console;
 
 use strict;
 use warnings;
-use AnyEvent::Log;
+use JSON::XS ();
 
 use base qw(Net::Statsd::Server::Backend);
 
@@ -16,6 +16,7 @@ sub init {
     timers => {},
   };
 
+  $self->{json_emitter} = JSON::XS->new->relaxed->utf8->pretty->indent(4);
 }
 
 sub flush {
@@ -42,18 +43,16 @@ sub flush {
     pctThreshold  => $metrics->{pctThreshold},
   };
 
-  print STDERR Data::Dump::dump($out), "\n";
+  print STDERR $self->{json_emitter}->encode($out), "\n";
   return;
 }
 
 sub status {
-  my ($self, $write_callback) = @_;
-
-  for (qw(lastFlush lastException)) {
-    $write_callback->($_, $self->{$_}, "\n");
-  }
-
-  return;
+  my ($self) = @_;
+  return {
+    last_flush     => $self->since($self->{lastFlush}),
+    last_exception => $self->since($self->{lastException}),
+  };
 }
 
 1;
