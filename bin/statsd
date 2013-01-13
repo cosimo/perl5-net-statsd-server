@@ -32,7 +32,6 @@ Cosimo Streppone, E<lt>cosimo@cpan.orgE<gt>
 use 5.010;
 use strict;
 use warnings;
-use autodie;
 
 use lib '../lib';
 use Net::Statsd::Server;
