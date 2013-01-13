@@ -11,8 +11,6 @@ use AnyEvent::Handle::UDP;
 use AnyEvent::Log;
 use AnyEvent::Socket;
 
-use Data::Dump;
-use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use JSON::XS ();
 use POSIX qw(:errno_h :sys_wait_h);
 use Socket;
@@ -29,28 +27,11 @@ use constant {
   DEBUG                  => 1,
   DEFAULT_CONFIG_FILE    => 'localConfig.js',
   DEFAULT_FLUSH_INTERVAL => 10000,
-  DEFAULT_LOG_LEVEL      => 'notice',
+  DEFAULT_LOG_LEVEL      => 'info',
 };
 
 our $VERSION = '0.01';
-our $logger = DEBUG
-    ? (AnyEvent::Log::logger trace => \my $trace)
-    : sub {};
-
-# }}}
-
-# AnyEvent logging setup {{{
-
-## Ineffective with syslog collector
-#$AnyEvent::Log::FILTER->level(DEFAULT_LOG_LEVEL);
-
-# Syslog logging works commenting out the FILTER->level line
-$AnyEvent::Log::COLLECT->attach(
-    AnyEvent::Log::Ctx->new(
-        level         => DEFAULT_LOG_LEVEL,
-        log_to_syslog => "user",
-    )
-);
+our $logger;
 
 # }}}
 
@@ -84,7 +65,7 @@ sub new {
     keyFlushInt   => undef,
 
     backends      => [],
-    logger         => $logger,
+    logger        => $logger,
   };
 
   $self->{$_} = $opt->{$_}
@@ -93,8 +74,18 @@ sub new {
   bless $self, $class;
 }
 
-sub logger {
-    $_[0]->{logger};
+# Flatten JSON booleans to avoid calls to JSON::XS::bool
+# in the performance-critical code paths
+sub _flatten_bools {
+  my ($self, $conf_hash) = @_;
+  for (qw(dumpMessages debug)) {
+    $conf_hash->{$_} = !! $conf_hash->{$_};
+  }
+  return $conf_hash;
+}
+
+sub _start_time_hi {
+  return $_[0]->{start_time_hi};
 }
 
 sub config_defaults {
@@ -122,10 +113,6 @@ sub config_defaults {
   };
 }
 
-sub _start_time_hi {
-  return $_[0]->{start_time_hi};
-}
-
 sub config {
   my ($self, $config_file) = @_;
 
@@ -150,9 +137,7 @@ sub config {
   my $json = JSON::XS->new->relaxed->utf8;
   my $conf_hash = $json->decode($conf_json);
 
-  # Flatten JSON booleans to avoid calls to JSON::XS::bool
-  # in the performance-critical code paths
-  $conf_hash->{dumpMessages} = !! $conf_hash->{dumpMessages};
+  $conf_hash = $self->_flatten_bools($conf_hash);
 
   # Poor man's Hash::Merge
   for (keys %{ $defaults }) {
@@ -175,7 +160,7 @@ sub default_config_file {
 sub flush_metrics {
   my ($self) = @_;
   my $flush_start_time = time;
-  AE::log notice => "flush_metrics";
+  $logger->(notice => "flushing metrics");
   my $flush_interval = $self->config->{flushInterval};
   my $metrics = $self->metrics->process($flush_interval);
   $self->foreach_backend(sub {
@@ -212,7 +197,7 @@ sub handle_client_packet {
 
   for my $m (@metrics) {
 
-    #AE::log(debug => $m) if $dump_messages;
+    $logger->(debug => $m) if $dump_messages;
 
     my @bits = split(":", $m);
     my $key = shift @bits;
@@ -233,10 +218,8 @@ sub handle_client_packet {
       my $sample_rate = 1;
       my @fields = split(/\|/, $bits[$i]);
 
-      #AE::log warn => "\@fields = ['" . join("', '", @fields) . "']";
-
       if (! defined $fields[1] || $fields[1] eq "") {
-        AE::log warn => "Bad line: $bits[$i] in msg \"$m\"";
+        $logger->("Bad line: $bits[$i] in msg \"$m\"");
         $counters->{"statsd.bad_lines_seen"}++;
         $stats->{"messages"}->{"bad_lines_seen"}++;
         next;
@@ -278,7 +261,7 @@ sub handle_client_packet {
             $sample_rate = $1 + 0;
           }
           else {
-            AE::log warn => "Bad line: $bits[$i] in msg \"$m\"; has invalid sample rate";
+            $logger->("Bad line: $bits[$i] in msg \"$m\"; has invalid sample rate");
             $counters->{"statsd.bad_lines_seen"}++;
             $stats->{"messages"}->{"bad_lines_seen"}++;
             next;
@@ -301,7 +284,7 @@ sub handle_manager_command {
   my $cmd = shift @cmdline;
   my $reply;
 
-  AE::log notice => "Mgmt command is '$cmd' (req=$request)";
+  #$logger->(notice => "Mgmt command is '$cmd' (req=$request)");
 
   if ($cmd eq "help") {
       $reply = (
@@ -326,29 +309,17 @@ sub handle_manager_command {
         }
       }
 
-      # TODO notify/gather backends
-      #
-      #$backendEvents->once(
-      #  'status',
-      #  sub {
-      #    my $writeCb = shift;
-      #    $stream->write("END\n\n");
-      #  }
-      #);
-
-      # Let each backend contribute its status
-      #$backendEvents->emit(
-      #  'status',
-      #  sub {
-      #    my ($err, $name, $stat, $val) = @_;
-      #    if ($err) {
-      #      warn("Failed to read stats for backend $name: $err");
-      #    }
-      #    else {
-      #      $stat_writer->($name, $stat, $val);
-      #    }
-      #  }
-      #);
+      $self->foreach_backend(sub {
+        my $backend_status = $_[0]->status;
+        if ($backend_status && ref $backend_status eq "HASH") {
+          for (keys %{ $backend_status }) {
+            $reply .= sprintf("%s.%s: %s\n",
+              lc($_[0]->name),
+              $_ => $backend_status->{$_}
+            );
+          }
+        }
+      });
 
       $reply .= "END\n\n";
   }
@@ -400,9 +371,9 @@ sub handle_manager_command {
 
 sub handle_manager_connection {
   my ($self, $handle, $line) = @_;
-  AE::log notice => "Received mgmt command [$line]";
+  #$logger->(notice => "Received mgmt command [$line]");
   if (my $reply = $self->handle_manager_command($handle, $line)) {
-    AE::log notice => "Sending mgmt reply [$reply]";
+    #$logger->(notice => "Sending mgmt reply [$reply]");
     $handle->push_write($reply);
     # Accept a new command on the same connection
     $handle->push_read(line => sub {
@@ -410,7 +381,7 @@ sub handle_manager_connection {
     });
   }
   else {
-    AE::log notice => "Shutting down socket";
+    #$logger->(notice => "Shutting down socket");
     $handle->push_write("\n");
     $handle->destroy;
   }
@@ -433,11 +404,39 @@ sub init_backends {
     eval {
       require $mod ; 1
     } or do {
-      AE::log error => "Backend ${backend} failed to load: $@";
+      $logger->("Backend ${backend} failed to load: $@");
       next;
     };
     $self->register_backend($pkg);
   }
+}
+
+sub init_logger {
+  my ($self, $config) = @_;
+
+  $config ||= {};
+
+  my $backend = $config->{backend} || 'stdout';
+  my $level = lc($config->{level} || 'LOG_INFO');
+  $level =~ s{^log_}{};
+
+  if ($backend eq 'stdout') {
+    $AnyEvent::Log::FILTER->level($level);
+  }
+  elsif ($backend eq 'syslog') {
+    # Syslog logging works commenting out the FILTER->level line
+    $AnyEvent::Log::COLLECT->attach(
+      AnyEvent::Log::Ctx->new(
+        level         => $level,
+        log_to_syslog => "user",
+      )
+    );
+  }
+  $logger ||= sub { AE::log(shift(@_), shift(@_)) };
+}
+
+sub logger {
+  return $logger;
 }
 
 sub metrics {
@@ -450,6 +449,7 @@ sub register_backend {
   my $backend_instance = $backend->new(
     $self->_start_time_hi, $self->config,
   );
+  $logger->(notice => "Initializing $backend backend");
   push @{ $self->{backends} }, $backend_instance;
 }
 
@@ -457,14 +457,18 @@ sub foreach_backend {
   my ($self, $callback) = @_;
   my $backends = $self->{backends} || [];
   for my $obj (@{ $backends }) {
-    $callback->($obj);
+    eval {
+      $callback->($obj); 1;
+    } or do {
+      $logger->(error => "Failed callback on $obj backend: $@");
+    };
   }
 }
 
 sub reload_config {
   my ($self) = @_;
   delete $self->{config};
-  AE::log warn => "Received SIGHUP: reloading configuration";
+  $logger->(warn => "Received SIGHUP: reloading configuration");
   return $self->{config} = $self->config();
 }
 
@@ -475,7 +479,7 @@ sub setup_timer {
     || DEFAULT_FLUSH_INTERVAL;
 
   $flush_interval = $flush_interval / 1000;
-  AE::log notice => "metrics flush will happen every ${flush_interval}s";
+  $logger->(notice => "metrics flush will happen every ${flush_interval}s");
 
   my $flush_t = AE::timer $flush_interval, $flush_interval, sub {
     $self->flush_metrics
@@ -491,6 +495,8 @@ sub start_server {
     $config = $self->config();
   }
 
+  $self->init_logger($config->{log});
+
   my $host = $config->{address} || '0.0.0.0';
   my $port = $config->{port}    || 8125;
 
@@ -504,7 +510,7 @@ sub start_server {
     bind => [$host, $port],
     on_recv => sub {
       my ($data, $ae_handle, $client_addr) = @_;
-      #AE::log debug => "Got data=$data self=$self";
+      #$logger->(debug => "Got data=$data self=$self");
       my $reply = $self->handle_client_packet($data);
       $ae_handle->push_send($reply, $client_addr);
     },
@@ -532,8 +538,8 @@ sub start_server {
     });
   };
 
-  AE::log notice => "statsd server started on ${host}:${port} (v${VERSION} based on ${AnyEvent::MODEL})";
-  AE::log notice => "manager server started on ${mgmt_host}:${mgmt_port})";
+  $logger->(notice => "statsd server started on ${host}:${port} (v${VERSION})"); 
+  $logger->(notice => "manager interface started on ${mgmt_host}:${mgmt_port}");
 
   my $ti = $self->setup_timer;
 
