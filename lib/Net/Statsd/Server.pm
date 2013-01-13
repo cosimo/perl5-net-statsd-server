@@ -1,3 +1,5 @@
+# ABSTRACT: a Perl port of Etsy's statsd *server*
+
 package Net::Statsd::Server;
 
 # Use statements {{{
@@ -5,16 +7,16 @@ package Net::Statsd::Server;
 use strict;
 use warnings;
 
+use JSON::XS ();
+use POSIX qw(:errno_h :sys_wait_h);
+use Socket;
+use Time::HiRes ();
+
 use AnyEvent;
 use AnyEvent::Handle;
 use AnyEvent::Handle::UDP;
 use AnyEvent::Log;
 use AnyEvent::Socket;
-
-use JSON::XS ();
-use POSIX qw(:errno_h :sys_wait_h);
-use Socket;
-use Time::HiRes ();
 
 use Net::Statsd::Server::Backend;
 use Net::Statsd::Server::Metrics;

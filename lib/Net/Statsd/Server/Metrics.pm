@@ -1,3 +1,5 @@
+# ABSTRACT: Provides metrics abstraction to a running statsd server
+
 package Net::Statsd::Server::Metrics;
 
 use 5.010;

@@ -1,0 +1,13 @@
+bin/debugConfig.js
+bin/exampleConfig.js
+bin/localConfig.js
+bin/statsd
+lib/Net/Statsd/Server.pm
+lib/Net/Statsd/Server/Backend.pm
+lib/Net/Statsd/Server/Backend/Console.pm
+lib/Net/Statsd/Server/Backend/Graphite.pm
+lib/Net/Statsd/Server/Metrics.pm
+Makefile.PL
+MANIFEST			This list of files
+README
+t/000-sanity.t

@@ -1,4 +1,3 @@
-use strict;
 use Test::More;
 
 plan tests => 1;
