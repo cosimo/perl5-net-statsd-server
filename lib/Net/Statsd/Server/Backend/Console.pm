@@ -11,18 +11,30 @@ use base qw(Net::Statsd::Server::Backend);
 sub init {
   my ($self) = @_;
 
+=cut
   $self->{statsCache} = {
     counters => {},
     timers => {},
   };
+=cut
 
-  $self->{json_emitter} = JSON::XS->new->relaxed->utf8->pretty->indent(4);
+  $self->{json_emitter} = JSON::XS->new()
+    ->utf8(1)
+    ->shrink(1)
+    ->space_before(0)
+    ->space_after(0)
+    ->indent(0);
 }
 
 sub flush {
   my ($self, $timestamp, $metrics) = @_;
 
   print STDERR "Flushing stats at " . localtime($timestamp) . "\n";
+
+=cut
+
+WTF? Why does node-statsd do this at all?
+
   my $sc = $self->{statsCache};
   for my $type (keys %{ $sc }) {
     next unless $metrics->{$type};
@@ -33,9 +45,11 @@ sub flush {
     }
   }
 
+=cut
+
   my $out = {
-    counters      => $sc->{counters},
-    timers        => $sc->{timers},
+    counters      => $metrics->{counters},
+    timers        => $metrics->{timers},
     gauges        => $metrics->{gauges},
     timer_data    => $metrics->{timer_data},
     counter_rates => $metrics->{counter_rates},
