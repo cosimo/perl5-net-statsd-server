@@ -31,7 +31,7 @@ use constant {
   DEFAULT_LOG_LEVEL      => 'info',
 };
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 our $logger;
 
 # }}}
@@ -125,7 +125,7 @@ sub config {
     return $self->{config};
   }
 
-  $config_file ||= $self->default_config_file();
+  $config_file ||= $self->config_file();
 
   if (! -e $config_file) {
     return;
