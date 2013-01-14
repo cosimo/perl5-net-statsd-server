@@ -77,13 +77,11 @@
   "debug" : false,
   "dumpMessages" : false,
 
-  ## UNSUPPORTED? "debugInterval" : 10000,
-
   "flushInterval" : 10000,  # ms
 
   "log" : {
     "backend" : "syslog",  # or "stdout"
-    "level" : "LOG_WARN",  # "warn" to be less verbose
+    "level" : "LOG_INFO",  # "warn" to be less verbose
   },
 
   "backends": [ "Graphite", "Console" ],
@@ -91,7 +89,7 @@
   # statsd will periodically flush its metrics to Graphite
   # Be sure to include the Graphite backend above
   "graphitePort": 2003,
-  "graphiteHost": "graphite.local",
+  "graphiteHost": "graphite.domain.local",
 
   ## Repeater backend is not implemented yet
   #"repeater": [ { "host": "10.1.2.3", "port": 8125 } ],
