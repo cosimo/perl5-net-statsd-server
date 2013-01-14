@@ -33,13 +33,16 @@ use 5.010;
 use strict;
 use warnings;
 
-use lib '../lib';
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
 use Net::Statsd::Server;
 
 my $config_file = $ARGV[0] || 'localConfig.js';
 
 # By default, it looks up localConfig.js
-my $statsd = Net::Statsd::Server->new({ config_file => $config_file });
+my $statsd = Net::Statsd::Server->new({
+  config_file => $config_file
+});
 
 # Not that easy, since we'd have to shutdown
 # and rebind the sockets, but for everything
