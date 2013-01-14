@@ -5,10 +5,9 @@ package Net::Statsd::Server;
 # Use statements {{{
 
 use strict;
-use warnings;
+#se warnings;
 
 use JSON::XS ();
-use POSIX qw(:errno_h :sys_wait_h);
 use Socket;
 use Time::HiRes ();
 
@@ -53,6 +52,7 @@ sub new {
     server        => undef,
     mgmtServer    => undef,
 
+    config_file   => $opt->{config_file},
     config        => undef,
     stats         => {
       messages => {
@@ -100,17 +100,20 @@ sub config_defaults {
     "mgmt_port"     => 8126,
     "mgmt_address"  => "0.0.0.0",
     "flushInterval" => DEFAULT_FLUSH_INTERVAL, # ms
+    # "keyFlush" is not implemented yet
     #"keyFlush" => {
     #  "interval" => 10,                        # s
     #  "percent"  => 100,
-    #  "log"      => "",            # FIXME What's this?
+    #  "log"      => "",
     #},
-    #"log" => {
-    #},
-    "percentThreshold" => 90,
+    "log" => {
+      "backend" : "stdout",
+      "level" : "LOG_INFO",
+    },
+    "percentThreshold" => [ 90 ],
     "dumpMessages" => 0,
     "backends" => [
-      "graphite"
+      "Console",
     ],
   };
 }
@@ -155,8 +158,8 @@ sub counters {
   $_[0]->{metrics}->counters;
 }
 
-sub default_config_file {
-  DEFAULT_CONFIG_FILE;
+sub config_file {
+  $_[0]->{config_file} // DEFAULT_CONFIG_FILE;
 }
 
 sub flush_metrics {
@@ -570,3 +573,120 @@ sub sets {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Net::Statsd::Server - a Perl port of Flickr/Etsy's statsd metrics daemon
+
+=head1 DESCRIPTION
+
+For the statsd B<client> library, check out the C<Net::Statsd> module:
+
+  https://metacpan.org/module/Net::Statsd
+
+C<Net::Statsd::Server> is the B<server> component of statsd.
+It implements a daemon that listens on a given host/port for incoming
+UDP packets and dispatches them to whatever you want, including
+B<Graphite> or your console. Look into the C<Net::Statsd::Server::Backend::*>
+namespace to know all the possibilities, or write a backend yourself.
+
+=head1 USES
+
+So, what do you use a C<statsd> daemon for?
+You use it to track metrics of all sorts.
+
+Background information here:
+
+  http://codeascraft.etsy.com/2011/02/15/measure-anything-measure-everything/
+
+=head1 MOTIVATION
+
+Why did I do this? There's already a gazillion implementations of
+statsd. The original one from Cal Henderson/Flickr was not released
+as a complete working software AFAIK:
+
+  https://github.com/iamcal/Flickr-StatsD
+
+then Etsy rewrote it as Javascript to run under node.js.
+Other implementations range from C to Python, etc...
+
+I wrote one in Perl for a few reasons:
+
+=over 4
+
+=item *
+
+Because I don't like adding node.js to our production stack just to run statsd.
+
+=item *
+
+to learn how statsd was put together
+
+=item *
+
+to learn AnyEvent
+
+=item *
+
+to learn how to build a high performance UDP server
+
+=item *
+
+to have some good fun
+
+=back
+
+Basically, to learn :-)
+
+=head1 HOW TO USE THIS MODULE
+
+You shouldn't need any instructions to use it.
+It comes with batteries included.
+
+There is a C<bin/statsd> script included in the CPAN
+distribution, together with a bunch of example configuration
+files that should get you up and running in no time.
+
+I have tried to keep compatibility with the node.js version
+of statsd as much as I could, so you can literally use the
+same configuration files, bar a conversion from javascript
+to JSON format.
+
+You can also consult the node-statsd documentation, up
+on Github as well:
+
+  https://github.com/etsy/statsd
+
+=head1 AUTHORS
+
+Cosimo Streppone, E<lt>cosimo@cpan.orgE<gt>
+
+=head1 COPYRIGHT
+
+The Net::Statsd::Server module is Copyright (c) 2013 Cosimo Streppone.
+All rights reserved.
+
+You may distribute under the terms of either the GNU General
+Public License or the Artistic License, as specified in the
+Perl 5.10.0 README file.
+
+=head1 CONTRIBUTING
+
+If you want to send patches or contribute, the easiest
+way is to pull the source code repository hosted at Github:
+
+  https://github.com/cosimo/perl5-net-statsd-server
+
+=head1 ACKNOWLEDGEMENTS
+
+Many thanks to my awesome wife that coped with
+me trying to write this in a single weekend,
+leaving barely any time for anything else.
+
+Many thanks to my current employer, Opera Software, for
+at least partly, sponsoring development of this module.
+Technically, Opera is sponsoring me trying it in production :-)
+
+=cut
