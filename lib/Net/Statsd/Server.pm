@@ -31,7 +31,7 @@ use constant {
   DEFAULT_LOG_LEVEL      => 'info',
 };
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 our $logger;
 
 # }}}
@@ -107,8 +107,8 @@ sub config_defaults {
     #  "log"      => "",
     #},
     "log" => {
-      "backend" : "stdout",
-      "level" : "LOG_INFO",
+      "backend" => "stdout",
+      "level"   => "LOG_INFO",
     },
     "percentThreshold" => [ 90 ],
     "dumpMessages" => 0,
