@@ -1,7 +1,7 @@
-bin/debugConfig.js
 bin/exampleConfig.js
 bin/localConfig.js
 bin/statsd
+debian/statsd.init
 lib/Net/Statsd/Server.pm
 lib/Net/Statsd/Server/Backend.pm
 lib/Net/Statsd/Server/Backend/Console.pm
