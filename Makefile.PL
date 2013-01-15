@@ -8,7 +8,6 @@ WriteMakefile(
         'AnyEvent::Handle::UDP' => 0,
         'IO::Socket::INET' => 0,
         'JSON::XS' => 0,
-        'POSIX' => 0,
     },
     #'ABSTRACT_FROM'	 => 'lib/Net/Statsd/Server.pm',
 );
