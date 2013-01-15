@@ -31,7 +31,7 @@ use constant {
   DEFAULT_LOG_LEVEL      => 'info',
 };
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 our $logger;
 
 # }}}
@@ -84,6 +84,17 @@ sub _flatten_bools {
     $conf_hash->{$_} = !! $conf_hash->{$_};
   }
   return $conf_hash;
+}
+
+sub _json_emitter {
+  my ($self) = @_;
+  my $js = JSON::XS->new()
+    ->utf8(1)
+    ->shrink(1)
+    ->space_before(0)
+    ->space_after(1)
+    ->indent(0);
+  return $js;
 }
 
 sub _start_time_hi {
@@ -154,8 +165,31 @@ sub config {
   return $self->{config} = $conf_hash;
 }
 
-sub counters {
-  $_[0]->{metrics}->counters;
+sub clear_metrics {
+  my ($self) = @_;
+
+  # Whether to just reset them to zero or to wipe them
+  my $del_counters = $self->config->{deleteCounters} // 0;
+
+  my $counters = $self->{metrics}->{counters};
+  if ($del_counters) {
+    $self->{metrics}->{counters} = {};
+  }
+  else {
+    $_ = 0 for values %{ $counters };
+  }
+
+  my $timers = $self->{metrics}->{timers};
+  $_ = [] for values %{ $timers };
+
+  # FIXME Nodejs statsd doesn't clear gauges??
+  #my $gauges = $self->{metrics}->{gauges};
+  #$_ = undef for values %{ $gauges };
+
+  my $sets = $self->{metrics}->{sets};
+  $_ = {} for values %{ $sets };
+
+  return;
 }
 
 sub config_file {
@@ -171,11 +205,8 @@ sub flush_metrics {
   $self->foreach_backend(sub {
     $_[0]->flush($flush_start_time, $metrics);
   });
+  $self->clear_metrics();
   return;
-}
-
-sub gauges {
-  return $_[0]->{metrics}->{gauges};
 }
 
 # This is the performance-critical section of Net::Statsd::Server.
@@ -289,7 +320,7 @@ sub handle_manager_command {
   my $cmd = shift @cmdline;
   my $reply;
 
-  #$logger->(notice => "Mgmt command is '$cmd' (req=$request)");
+  $logger->(notice => "Received manager command '$cmd' (req=$request)");
 
   if ($cmd eq "help") {
       $reply = (
@@ -329,47 +360,62 @@ sub handle_manager_command {
       $reply .= "END\n\n";
   }
   elsif ($cmd eq "counters") {
-      my $counters = $self->counters;
-      $reply = ("$counters\nEND\n\n");
+    my $counters = $self->{metrics}->{counters};
+    $reply = $self->_json_emitter()->encode($counters);
+    $reply .= "\nEND\n\n";
   }
   elsif ($cmd eq "timers") {
-      my $timers = $self->timers;
-      $reply = ("$timers\nEND\n\n");
+    my $timers = $self->{metrics}->{timers};
+    $reply = $self->_json_emitter()->encode($timers);
+    $reply .= "\nEND\n\n";
   }
   elsif ($cmd eq "gauges") {
-      my $gauges = $self->gauges;
-      $reply = ("$gauges\nEND\n\n");
+    my $gauges = $self->{metrics}->{gauges};
+    $reply = $self->_json_emitter()->encode($gauges);
+    $reply .= "\nEND\n\n";
+  }
+  elsif ($cmd eq "sets") {
+    my $sets = $self->{metrics}->{sets};
+    my $sets_as_lists = {};
+    # FIXME Not really happy about this...
+    # if you have huge sets, it's going to suck.
+    # If you have huge sets, probably statsd is not for you anyway.
+    for my $set (keys %{$sets}) {
+      $sets_as_lists->{$set} = [ keys %{ $sets->{$set} } ];
+    }
+    $reply = $self->_json_emitter()->encode($sets_as_lists);
+    $reply .= "\nEND\n\n";
   }
   elsif ($cmd eq "delcounters") {
-      my $counters = $self->counters;
-      for my $name (@cmdline) {
-          delete $counters->{$name};
-          $reply .= "deleted: $name\n";
-      }
-      $reply .= "END\n\n";
+    my $counters = $self->{metrics}->{counters};
+    for my $name (@cmdline) {
+      delete $counters->{$name};
+      $reply .= "deleted: $name\n";
+    }
+    $reply .= "\nEND\n\n";
   }
   elsif ($cmd eq "deltimers") {
-      my $timers = $self->timers;
-      for my $name (@cmdline) {
-          delete $timers->{$name};
-          $reply .= "deleted: $name\n";
-      }
-      $reply .= "END\n\n";
+    my $timers = $self->{metrics}->{timers};
+    for my $name (@cmdline) {
+      delete $timers->{$name};
+      $reply .= "deleted: $name\n";
+    }
+    $reply .= "\nEND\n\n";
   }
   elsif ($cmd eq "delgauges") {
-      my $gauges = $self->gauges;
-      for my $name (@cmdline) {
-          delete $gauges->{$name};
-          $reply .= "deleted: $name\n";
-      }
-      $reply .= "END\n\n";
+    my $gauges = $self->{metrics}->{gauges};
+    for my $name (@cmdline) {
+      delete $gauges->{$name};
+      $reply .= "deleted: $name\n";
+    }
+    $reply .= "\nEND\n\n";
   }
   elsif ($cmd eq "quit") {
-      undef $reply;
-      $handle->destroy();
+    undef $reply;
+    $handle->destroy();
   }
   else {
-      $reply = "ERROR\n";
+    $reply = "ERROR\n";
   }
   return $reply;
 }
@@ -378,7 +424,7 @@ sub handle_manager_connection {
   my ($self, $handle, $line) = @_;
   #$logger->(notice => "Received mgmt command [$line]");
   if (my $reply = $self->handle_manager_command($handle, $line)) {
-    #$logger->(notice => "Sending mgmt reply [$reply]");
+    $logger->(notice => "Sending mgmt reply [$reply]");
     $handle->push_write($reply);
     # Accept a new command on the same connection
     $handle->push_read(line => sub {
@@ -386,7 +432,7 @@ sub handle_manager_connection {
     });
   }
   else {
-    #$logger->(notice => "Shutting down socket");
+    $logger->(notice => "Shutting down socket");
     $handle->push_write("\n");
     $handle->destroy;
   }
@@ -558,18 +604,10 @@ sub stats {
   $_[0]->{stats};
 }
 
-sub timers {
-  $_[0]->{metrics}->{timers};
-}
-
 sub trim {
   $_[0] =~ s{^\s*}{};
   $_[0] =~ s{\s*$}{};
   return $_[0];
-}
-
-sub sets {
-  $_[0]->{metrics}->sets;
 }
 
 1;
