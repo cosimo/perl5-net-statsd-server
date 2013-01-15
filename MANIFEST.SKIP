@@ -1,0 +1,11 @@
+.git/
+bin/benchmarkConfig\.js
+t-statsd
+blib
+pm_to_blib
+Net-Statsd-Server.*
+dist\.ini
+Makefile$
+Makefile\.old
+MANIFEST\.bak
+MANIFEST\.SKIP

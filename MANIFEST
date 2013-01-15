@@ -1,3 +1,4 @@
+.gitignore
 bin/exampleConfig.js
 bin/localConfig.js
 bin/statsd
@@ -9,5 +10,6 @@ lib/Net/Statsd/Server/Backend/Graphite.pm
 lib/Net/Statsd/Server/Metrics.pm
 Makefile.PL
 MANIFEST			This list of files
+MYMETA.yml
 README
 t/000-sanity.t

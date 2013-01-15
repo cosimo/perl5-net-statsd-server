@@ -2,3 +2,8 @@ bin/nytprof.out
 bin/nytprof
 bin/profiles
 bin/debugConfig.js
+Makefile
+MYMETA.yml
+MANIFEST.bak
+pm_to_blib
+blib
