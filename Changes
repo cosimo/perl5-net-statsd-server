@@ -1,0 +1,15 @@
+NAME
+    Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
+
+  Changes in Net::Statsd::Server 0.04   15th January 2013
+      Fixed statistics flush. When a flush is triggered, stats have
+        to be cleared. The flush code wasn't doing this previously.
+
+      Fixed management commands (:8126) to output correct JSON data
+        structures.
+
+      This is the first fully functional statsd server release.
+
+  Net::Statsd::Server 0.01 - 0.03            January 2013
+      First release on an unsuspecting world.
+
