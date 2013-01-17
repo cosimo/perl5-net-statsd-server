@@ -1,6 +1,15 @@
 NAME
     Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+  Changes in Net::Statsd::Server 0.06   17th January 2013
+      Added new File backend.
+        It allows to flush all aggregated stats to a given log file.
+
+      Added keyFlush implementation.
+        Allows to have the top n% (keyFlush.percent) dumped to a
+        log file (keyFlush.log) or stdout every y seconds
+        (keyFlush.interval).
+
   Changes in Net::Statsd::Server 0.05   16th January 2013
       Improved UDP socket default settings to perform better.
         In my tests, Net::Statsd::Server manages to successfully capture

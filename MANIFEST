@@ -7,6 +7,7 @@ debian/statsd.init
 lib/Net/Statsd/Server.pm
 lib/Net/Statsd/Server/Backend.pm
 lib/Net/Statsd/Server/Backend/Console.pm
+lib/Net/Statsd/Server/Backend/File.pm
 lib/Net/Statsd/Server/Backend/Graphite.pm
 lib/Net/Statsd/Server/Changes.pod
 lib/Net/Statsd/Server/Metrics.pm
