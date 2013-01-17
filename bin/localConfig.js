@@ -57,6 +57,9 @@
 #     prefixGauge:      graphite prefix for gauge metrics [default: "gauges"]
 #     prefixSet:        graphite prefix for set metrics [default: "sets"]
 #
+#   file:
+#     name:           name of the logfile for the File backend
+#
 #   repeater:         an array of hashes of the for host: and port:
 #                     that details other statsd servers to which the received
 #                     packets should be "repeated" (duplicated to).
@@ -84,7 +87,19 @@
     "level" : "LOG_INFO",  # "warn" to be less verbose
   },
 
+  # Available backends are: Graphite, Console, File
   "backends": [ "Graphite", "Console" ],
+
+  # File backend config example
+  #"file" : {
+  #  "name" : "/var/tmp/statsd-flush.log",
+  #},
+
+  #"keyFlush" : {
+  #  "interval" : 10000,   # ms
+  #  "percent" : 25,
+  #  "log" : "/var/tmp/statsd-top.log",
+  #},
 
   # statsd will periodically flush its metrics to Graphite
   # Be sure to include the Graphite backend above
