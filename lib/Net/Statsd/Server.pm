@@ -8,7 +8,7 @@ use strict;
 #se warnings;
 
 use JSON::XS ();
-use Socket;
+use Socket qw(SOL_SOCKET SO_RCVBUF);
 use Time::HiRes ();
 
 use AnyEvent;
@@ -566,6 +566,12 @@ sub start_server {
       $ae_handle->push_send($reply, $client_addr);
     },
   );
+
+  # Bump up SO_RCVBUF on UDP socket, to buffer up incoming
+  # UDP packets, to avoid massive packet loss when load
+  # is very high.
+  setsockopt($self->{server}->fh, SOL_SOCKET, SO_RCVBUF, 16*1024*1024)
+    or die "Couldn't set SO_RCVBUF: $!";
 
   # Management interface (TCP, for 'stats' command, etc...)
   $self->{mgmtServer} = AnyEvent::Socket::tcp_server $mgmt_host, $mgmt_port, sub {
