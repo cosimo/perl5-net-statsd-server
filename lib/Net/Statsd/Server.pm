@@ -64,7 +64,6 @@ sub new {
 
     debugInt      => undef,
     flushInterval => undef,
-    keyFlushInt   => undef,
 
     backends      => [],
     logger        => $logger,
@@ -111,7 +110,6 @@ sub config_defaults {
     "mgmt_port"     => 8126,
     "mgmt_address"  => "0.0.0.0",
     "flushInterval" => DEFAULT_FLUSH_INTERVAL, # ms
-    # "keyFlush" is not implemented yet
     #"keyFlush" => {
     #  "interval" => 10,                        # s
     #  "percent"  => 100,
@@ -228,8 +226,8 @@ sub handle_client_packet {
   my @metrics = split("\n", $request);
 
   my $dump_messages = $config->{dumpMessages};
-  my $must_count_keys = exists $config->{keyFlushInterval}
-    && $config->{keyFlushInterval} > 0;
+  my $must_count_keys = exists $config->{keyFlush}
+    && $config->{keyFlush}->{interval};
 
   for my $m (@metrics) {
 
@@ -523,7 +521,7 @@ sub reload_config {
   return $self->{config} = $self->config();
 }
 
-sub setup_timer {
+sub setup_flush_timer {
   my ($self) = @_;
 
   my $flush_interval = $self->config->{flushInterval}
@@ -537,6 +535,77 @@ sub setup_timer {
   };
 
   return $flush_t;
+}
+
+sub setup_keyflush_timer {
+  my ($self) = @_;
+
+  my $conf_kf = $self->config->{keyFlush};
+  my $kf_interval = $conf_kf->{interval} // 0;
+  return if $kf_interval <= 0;
+
+  # Always milliseconds in the config!
+  $kf_interval /= 1000;
+
+  my $kf_pct = $conf_kf->{percent} // 100;
+  my $kf_log = $conf_kf->{log};
+
+  $logger->(notice => "flushing top ${kf_pct}% keys to "
+    . ($kf_log || "stdout")
+    . " every ${kf_interval}s"
+  );
+
+  my $kf_timer = AE::timer $kf_interval, $kf_interval, sub {
+    $self->flush_top_keys()
+  };
+
+  return $kf_timer;
+}
+
+sub flush_top_keys {
+  my ($self) = @_;
+
+  my $conf_kf = $self->config->{keyFlush} // {};
+  my $kf_interval = $conf_kf->{interval} // 0;
+  $kf_interval /= 1000;
+
+  my $kf_pct = $conf_kf->{percent} || 100;
+  my $kf_log = $conf_kf->{log};
+
+  my @sorted_keys;
+  my $key_counter = $self->metrics->{keyCounter};
+  while (my ($k, $v) = each %{ $key_counter }) {
+    push @sorted_keys, [ $k, $v ];
+  }
+
+  @sorted_keys = sort { $b->[1] <=> $a->[1] } @sorted_keys;
+
+  my @time = localtime;
+  my $time_str = sprintf "%04d-%02d-%02d %02d:%02d:%02d",
+    $time[5] + 1900, $time[4] + 1, $time[3],
+    $time[2], $time[1], $time[0];
+
+  my $log_message = "";
+
+  # Only show the top keyFlush.percent keys
+  my $top_pct_limit = int(scalar(@sorted_keys) * $kf_pct / 100);
+  for my $i (0 .. $top_pct_limit - 1) {
+    $log_message .= sprintf "$time_str count=%d key=%s\n",
+      $sorted_keys[$i][1], $sorted_keys[$i][0];
+  }
+
+  if ($kf_log) {
+    if (open my $log_fh, '>>', $kf_log) {
+      $log_fh->printflush($log_message);
+      $log_fh->close();
+    }
+  } else {
+    print $log_message;
+  }
+
+  # Clear the counters
+  $self->metrics->{keyCounter} = {};
+
 }
 
 sub start_server {
@@ -598,7 +667,8 @@ sub start_server {
   $logger->(notice => "statsd server started on ${host}:${port} (v${VERSION})"); 
   $logger->(notice => "manager interface started on ${mgmt_host}:${mgmt_port}");
 
-  my $ti = $self->setup_timer;
+  my $f_ti = $self->setup_flush_timer;
+  my $kf_ti = $self->setup_keyflush_timer;
 
   # This will block waiting for
   # incoming connections (TCP) or packets (UDP)
