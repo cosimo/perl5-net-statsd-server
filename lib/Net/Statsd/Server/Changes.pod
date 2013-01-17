@@ -2,6 +2,14 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.05   16th January 2013
+
+  Improved UDP socket default settings to perform better.
+    In my tests, Net::Statsd::Server manages to successfully capture
+    almost twice the amount of UDP traffic (otherwise lost) than
+    the original node.js based statsd, with SO_RCVBUF = 8Mb.
+    I still have to experiment a bit more with this setting though.
+
 =head2 Changes in Net::Statsd::Server 0.04   15th January 2013
 
   Fixed statistics flush. When a flush is triggered, stats have
