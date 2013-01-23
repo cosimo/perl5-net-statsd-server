@@ -1,5 +1,7 @@
 .git/
 bin/benchmarkConfig\.js
+bin/debugConfig\.js
+bin/profiles
 t-statsd
 blib
 pm_to_blib
