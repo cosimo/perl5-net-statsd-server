@@ -65,9 +65,11 @@ sub process {
     my $min = $values[0];
     my $max = $values[$#values];
 
+    # We don't want to iterate at all if there's just 1 value
     my $cumulativeValues = [ $min ];
-    for (1 .. $count) {
-      push @{ $cumulativeValues }, $values[$_] + $cumulativeValues->[$_-1];
+    for (my $i = 1; $i < $count; $i++) {
+      my $cmlVal = $values[$i] + $cumulativeValues->[$i - 1];
+      push @{ $cumulativeValues }, $values[$i] + $cumulativeValues->[$i - 1];
     }
 
     my $sum = my $mean = $min;
