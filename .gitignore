@@ -4,6 +4,7 @@ bin/profiles
 bin/debugConfig.js
 Makefile
 MYMETA.yml
+MYMETA.json
 MANIFEST.bak
 pm_to_blib
 blib
