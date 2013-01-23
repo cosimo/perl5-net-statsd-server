@@ -78,7 +78,10 @@ sub process {
     for my $pct (@{ $pctThreshold }) {
 
       if ($count > 1) {
-        my $numInThreshold = int ($pct / 100 * $count);
+        # Pay attention to the rounding: should behave the same
+        # as etsy's statsd, that's using a Math.round(x).
+        # int(x + 0.5) does this.
+        my $numInThreshold = int(($pct / 100 * $count) + 0.5);
         $maxAtThreshold = $values[$numInThreshold - 1];
         $sum = $cumulativeValues->[$numInThreshold - 1];
         $mean = $sum / $numInThreshold;
