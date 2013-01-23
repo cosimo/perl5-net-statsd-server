@@ -1,6 +1,19 @@
 NAME
     Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+  Changes in Net::Statsd::Server 0.07   23rd January 2013
+      Started converting the nodejs statsd test suite to TAP
+        test cases. Completed the conversion of the metrics processing
+        test cases. This uncovered two subtle bugs in the metrics class.
+
+      Fixed bug in calculation of percentile values threshold, due
+        to a difference in how Javascript's Math.round() and
+        Perl's int() work.
+
+      Fixed undefined value warning in the metrics processing during
+        the calculation of cumulative values for timers, due to
+        an off-by-one error.
+
   Changes in Net::Statsd::Server 0.06   17th January 2013
       Added new File backend.
         It allows to flush all aggregated stats to a given log file.
