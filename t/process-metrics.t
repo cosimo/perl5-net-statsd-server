@@ -78,7 +78,7 @@ sub timers_multiple_times {
   $metrics->{timers}->{a} = [100, 200, 300];
   my $processed = $metrics->process(100);
   my $timer_data = $processed->{timer_data}->{a};
-  is($timer_data->{std}, 81.64965809277261,
+  ok(abs($timer_data->{std} - 81.64965809277261) < 0.00001,
     'Variance is calculated correctly');
   is($timer_data->{upper}, 300,
     'Upper value of those supplied is the max (300)');
