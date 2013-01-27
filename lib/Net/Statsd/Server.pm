@@ -31,7 +31,7 @@ use constant {
   DEFAULT_LOG_LEVEL      => 'info',
 };
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 our $logger;
 
 # }}}

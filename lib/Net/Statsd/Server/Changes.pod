@@ -2,6 +2,12 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.08   27th January 2013
+
+  Fixed CPAN testers failures reported for inexact floating point
+    comparison when testing standard deviation of timer results
+    in the test suite.
+
 =head2 Changes in Net::Statsd::Server 0.07   23rd January 2013
 
   Started converting the nodejs statsd test suite to TAP
