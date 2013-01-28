@@ -445,6 +445,7 @@ sub init_backends {
   for my $backend (@{ $backends }) {
     my $pkg = $backend;
     if ($backend =~ m{^ (\w+) $}x) {
+      $pkg = ucfirst lc $pkg;
       $pkg = "Net::Statsd::Server::Backend::${pkg}";
     }
     my $mod = $pkg;
