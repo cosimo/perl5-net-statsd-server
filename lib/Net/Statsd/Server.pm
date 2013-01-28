@@ -253,7 +253,7 @@ sub handle_client_packet {
       my @fields = split(/\|/, $bits[$i]);
 
       if (! defined $fields[1] || $fields[1] eq "") {
-        $logger->("Bad line: $bits[$i] in msg \"$m\"");
+        $logger->(warn => "Bad line: $bits[$i] in msg \"$m\"");
         $counters->{"statsd.bad_lines_seen"}++;
         $stats->{"messages"}->{"bad_lines_seen"}++;
         next;
@@ -295,7 +295,7 @@ sub handle_client_packet {
             $sample_rate = $1 + 0;
           }
           else {
-            $logger->("Bad line: $bits[$i] in msg \"$m\"; has invalid sample rate");
+            $logger->(warn => "Bad line: $bits[$i] in msg \"$m\"; has invalid sample rate");
             $counters->{"statsd.bad_lines_seen"}++;
             $stats->{"messages"}->{"bad_lines_seen"}++;
             next;
@@ -443,6 +443,12 @@ sub init_backends {
     die "At least one backend is needed in your configuration";
   }
   for my $backend (@{ $backends }) {
+
+    # Nodejs statsd expects a relative path
+    if ($backend =~ m{^ \./backends/ (.+) $}x) {
+      $backend = $1;
+    }
+
     my $pkg = $backend;
     if ($backend =~ m{^ (\w+) $}x) {
       $pkg = ucfirst lc $pkg;
@@ -454,7 +460,7 @@ sub init_backends {
     eval {
       require $mod ; 1
     } or do {
-      $logger->("Backend ${backend} failed to load: $@");
+      $logger->(error=>"Backend ${backend} failed to load: $@");
       next;
     };
     $self->register_backend($pkg);
