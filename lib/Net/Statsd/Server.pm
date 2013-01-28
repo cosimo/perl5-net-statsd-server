@@ -237,7 +237,7 @@ sub handle_client_packet {
     my $key = shift @bits;
 
     $key =~ y{/ }{_-}s;
-    $key =~ y{a-zA-Z0-9\-\.}{}cd;
+    $key =~ y{a-zA-Z0-9_\-\.}{}cd;
 
     # Not very clear here. Etsy's code was doing this differently
     if ($must_count_keys) {
