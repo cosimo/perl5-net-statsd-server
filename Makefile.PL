@@ -10,4 +10,5 @@ WriteMakefile(
         'JSON::XS' => 0,
     },
     #'ABSTRACT_FROM'	 => 'lib/Net/Statsd/Server.pm',
+    test => { TESTS => "t/*.t t/integration-tests/*.t" },
 );
