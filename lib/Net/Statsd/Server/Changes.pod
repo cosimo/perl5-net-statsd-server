@@ -2,6 +2,19 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.09   29th January 2013
+
+  Fixed a few more nodejs-statsd compatibility bugs:
+    - non-legacy namespace code added a repeated 'stats.' level
+      that shouldn't be there
+    - underscode character ('_') is now correctly allowed as
+      part of a statsd metric.
+
+  Added an integration test suite, to verify end-to-end that
+    statsd server is behaving exactly as the nodejs version.
+    Being as near to 100% compatibility as possible has been
+    one of the main goals from the start.
+
 =head2 Changes in Net::Statsd::Server 0.08   27th January 2013
 
   Fixed CPAN testers failures reported for inexact floating point

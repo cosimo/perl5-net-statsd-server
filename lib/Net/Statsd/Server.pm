@@ -25,13 +25,13 @@ use Net::Statsd::Server::Metrics;
 # Constants and global variables {{{
 
 use constant {
-  DEBUG                  => 1,
+  DEBUG                  => 0,
   DEFAULT_CONFIG_FILE    => 'localConfig.js',
   DEFAULT_FLUSH_INTERVAL => 10000,
   DEFAULT_LOG_LEVEL      => 'info',
 };
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 our $logger;
 
 # }}}
