@@ -31,7 +31,7 @@ use constant {
   DEFAULT_LOG_LEVEL      => 'info',
 };
 
-our $VERSION = '0.09';
+our $VERSION = '0.09_01';
 our $logger;
 
 # }}}
@@ -688,9 +688,10 @@ sub stats {
 }
 
 sub trim {
-  $_[0] =~ s{^\s*}{};
-  $_[0] =~ s{\s*$}{};
-  return $_[0];
+  my $s = shift;
+  $s =~ s{^\s+}{};
+  $s =~ s{\s+$}{};
+  return $s;
 }
 
 1;
