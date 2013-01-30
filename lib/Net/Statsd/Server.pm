@@ -29,9 +29,10 @@ use constant {
   DEFAULT_CONFIG_FILE    => 'localConfig.js',
   DEFAULT_FLUSH_INTERVAL => 10000,
   DEFAULT_LOG_LEVEL      => 'info',
+  RECEIVE_BUFFER_MB      => 8,
 };
 
-our $VERSION = '0.09_01';
+our $VERSION = '0.09_02';
 our $logger;
 
 # }}}
@@ -644,10 +645,11 @@ sub start_server {
   );
 
   # Bump up SO_RCVBUF on UDP socket, to buffer up incoming
-  # UDP packets, to avoid massive packet loss when load
-  # is very high.
-  setsockopt($self->{server}->fh, SOL_SOCKET, SO_RCVBUF, 16*1024*1024)
-    or die "Couldn't set SO_RCVBUF: $!";
+  # UDP packets, to avoid significant packet loss under load.
+  # Read more: http://bit.ly/10eeFoE
+  setsockopt($self->{server}->fh, SOL_SOCKET,
+    SO_RCVBUF, RECEIVE_BUFFER_MB * 1048576)
+      or die "Couldn't set SO_RCVBUF: $!";
 
   # Management interface (TCP, for 'stats' command, etc...)
   $self->{mgmtServer} = AnyEvent::Socket::tcp_server $mgmt_host, $mgmt_port, sub {
