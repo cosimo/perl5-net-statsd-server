@@ -9,7 +9,7 @@ use Test::Statsd;
 use Test::More;
 
 my $t = Test::Statsd->new({
-  binary => $ENV{STATSD_BINARY} // "$Bin/../../bin/statsd",
+  binary => $ENV{STATSD_BINARY} // "$^X $Bin/../../bin/statsd",
   config => $ENV{STATSD_CONFIG} // "$Bin/../config/testConfig.js",
 });
 
