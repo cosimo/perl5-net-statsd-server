@@ -32,7 +32,12 @@ for (@tests) {
   my $copy_of_str = $str;
   my $res = Net::Statsd::Server::trim($str);
   is($str, $copy_of_str, "trim() doesn't touch the original string");
-  is($res, $expected, "trim('$str') actually returns '$expected'");
+  if (! defined $str) {
+    is($res, $expected, "trim of undef returns undef");
+  }
+  else {
+    is($res, $expected, "trim('$str') actually returns '$expected'");
+  }
 }
 
 # END
