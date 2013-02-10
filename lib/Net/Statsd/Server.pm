@@ -691,6 +691,7 @@ sub stats {
 
 sub trim {
   my $s = shift;
+  return unless defined $s;
   $s =~ s{^\s+}{};
   $s =~ s{\s+$}{};
   return $s;
