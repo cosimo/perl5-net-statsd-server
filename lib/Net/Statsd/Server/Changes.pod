@@ -2,6 +2,18 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.10  10th February 2013
+
+  Fixed SO_RCVBUF on Mac OS X, where it's apparently not possible
+    to set SO_RCVBUF to more than 8Mb. If you're on OSX, I'd
+    like to get more reports about this.
+
+  Fixed integration test suite so that it always runs with the
+    correct interpreter ($^X) instead of /usr/bin/perl.
+    This should fix lots of CPAN testers failure reports.
+
+  Improved internal trim() function.
+
 =head2 Changes in Net::Statsd::Server 0.09   29th January 2013
 
   Fixed a few more nodejs-statsd compatibility bugs:

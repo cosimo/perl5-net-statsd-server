@@ -32,7 +32,7 @@ use constant {
   RECEIVE_BUFFER_MB      => 8,
 };
 
-our $VERSION = '0.09_02';
+our $VERSION = '0.10';
 our $logger;
 
 # }}}
