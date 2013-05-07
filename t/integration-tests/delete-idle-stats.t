@@ -1,6 +1,5 @@
 #!/usr/bin/perl
 
-use 5.010;
 use strict;
 use warnings;
 
@@ -11,7 +10,9 @@ use Test::More;
 plan tests => 4;
 
 my $t = Test::Statsd->new({
-  binary => $ENV{STATSD_BINARY} // qq{$^X $Bin/../../bin/statsd},
+  binary => defined $ENV{STATSD_BINARY}
+          ? $ENV{STATSD_BINARY}
+          : qq{$^X $Bin/../../bin/statsd},
   # Make sure we use the special configuration needed for this test
   config => qq{$Bin/../config/deleteIdleStats.js},
 });
@@ -27,8 +28,8 @@ my $test_value = 100;
 # because we need to wait for 2 flushes and can't shutdown
 # the "fake" graphite daemon after the first flush.
 
+my $flush = 1;
 sub read_callback {
-  state $flush = 1;
   my ($hdl, $cv, $stats) = @_;
 
   # First flush, gauge value is expected to be there

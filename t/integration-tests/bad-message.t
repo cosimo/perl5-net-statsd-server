@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use 5.010;
+use 5.008;
 use strict;
 use warnings;
 
@@ -9,8 +9,8 @@ use Test::Statsd;
 use Test::More;
 
 my $t = Test::Statsd->new({
-  binary => $ENV{STATSD_BINARY} // qq{$^X $Bin/../../bin/statsd},
-  config => $ENV{STATSD_CONFIG} // qq{$Bin/../config/testConfig.js},
+  binary => $ENV{STATSD_BINARY} || qq{$^X $Bin/../../bin/statsd},
+  config => $ENV{STATSD_CONFIG} || qq{$Bin/../config/testConfig.js},
 });
 
 $t->start_statsd();

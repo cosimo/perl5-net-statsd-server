@@ -2,7 +2,7 @@
 
 package Net::Statsd::Server::Metrics;
 
-use 5.010;
+use 5.008;
 use strict;
 use Carp        ();
 use Time::HiRes ();

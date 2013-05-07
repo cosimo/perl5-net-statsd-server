@@ -14,7 +14,7 @@
 
 package Net::Statsd::Server::Backend::Test;
 
-use 5.010;
+use 5.008;
 use strict;
 use warnings;
 use base qw(Net::Statsd::Server::Backend::Graphite);
