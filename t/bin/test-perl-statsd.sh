@@ -1,4 +1,7 @@
 #!/bin/sh
+#
+# Run Net::Statsd::Server integration tests
+#
 
 if [ ! -e './t' ]; then
     echo "Please run this script from the distribution root folder"
