@@ -23,10 +23,17 @@ sub new {
   bless $self, $class;
 }
 
+# A read callback (read_cb) can optionally be used in special
+# cases when you don't want the TCP server to be shut down
+# when the first flush data is received (see delete-idle-stats test
+# for an example).
+
 sub wait_and_collect_flush_data {
-  my ($self, $port) = @_;
+  my ($self, $port, $read_cb) = @_;
 
   $self->{_flush_data} = "";
+
+  # Pretend to be a carbon/graphite daemon
   $port ||= 2003;
 
   my $srv;
@@ -45,8 +52,17 @@ sub wait_and_collect_flush_data {
         my ($ae_handle) = @_;
         # Store graphite data into a private object member
         $self->{_flush_data} .= $ae_handle->rbuf;
-        # Calling send() on the condvar stops the TCP server
-        $cv->send();
+        if ($read_cb) {
+          $read_cb->($hdl, $cv, $self->{_flush_data});
+          # We need to clear the received data now, or our
+          # reader will be surprised receiving the old + new
+          # buffer in the n > 1 round.
+          $self->{_flush_data} = "";
+          $ae_handle->{rbuf} = "";
+        } else {
+          # Calling send() on the condvar stops the TCP server
+          $cv->send();
+        }
       },
       on_eof => sub { $hdl->destroy },
     );
@@ -117,6 +133,8 @@ sub send_udp {
   );
 
   my $len = $sock->send($payload);
+  $sock->close();
+
   return $len == length($payload);
 }
 
