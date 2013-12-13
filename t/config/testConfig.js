@@ -7,6 +7,7 @@
   "debug": false,
   "dumpMessages": false,
   "flushInterval": 1000,
+  "flush_counters" : true,
 
   "log" : {
     "backend": "stdout",
@@ -19,4 +20,5 @@
   "graphite": {
     "legacyNamespace": false
   }
+
 }
