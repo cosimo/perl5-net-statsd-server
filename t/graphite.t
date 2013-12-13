@@ -30,8 +30,8 @@ sub setup {
 }
 
 sub process_metrics {
-  my $metrics = shift;
-  my $m = Net::Statsd::Server::Metrics->new();
+  my ($config, $metrics) = @_;
+  my $m = Net::Statsd::Server::Metrics->new($config);
   if (exists $metrics->{counters}) {
     for (keys %{ $metrics->{counters} }) {
       $m->{counters}->{$_} = $metrics->{counters}->{$_};
@@ -44,10 +44,12 @@ sub process_metrics {
 sub flush_stats {
   my $test_case = shift;
   my $time = time();
-  my $g = setup({
-    graphite => { legacyNamespace => 0 }
-  });
-  my $metrics = process_metrics($test_case);
+  my $config = {
+    graphite => { legacyNamespace => 0 },
+    prefixStats => 'statsd',
+  };
+  my $g = setup($config);
+  my $metrics = process_metrics($config, $test_case);
   my $stats = $g->flush_stats($time, $metrics);
   #diag($g->stats_to_string($stats));
   return $stats;

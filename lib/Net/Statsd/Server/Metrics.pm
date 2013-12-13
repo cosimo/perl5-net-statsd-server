@@ -4,16 +4,22 @@ package Net::Statsd::Server::Metrics;
 
 use 5.010;
 use strict;
+use Carp        ();
 use Time::HiRes ();
 
 sub new {
   my ($class, $config) = @_;
   $class = ref $class || $class;
+  my $g_pref = $config->{prefixStats};
+  if (! $g_pref) {
+    Carp::croak("prefixStats is empty or invalid! (Metrics.new)");
+  }
+
   my $self = {
     keyCounter => {},
     counters => {
-      "statsd.packets_received" => 0,
-      "statsd.bad_lines_seen"   => 0,
+      "${g_pref}.packets_received" => 0,
+      "${g_pref}.bad_lines_seen"   => 0,
     },
     timers => {},
     gauges => {},

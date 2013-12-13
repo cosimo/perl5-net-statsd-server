@@ -23,7 +23,7 @@ use Net::Statsd::Server::Metrics;
 plan tests => 34;
 
 sub setup { #:Setup
-  my $m = Net::Statsd::Server::Metrics->new();
+  my $m = Net::Statsd::Server::Metrics->new({ prefixStats => 'statsd' });
   return $m;
 }
 

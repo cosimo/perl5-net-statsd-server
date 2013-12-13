@@ -20,6 +20,7 @@ use warnings;
 use base qw(Net::Statsd::Server::Backend);
 
 use AnyEvent::Log;
+use Carp             ();
 use IO::Socket::INET ();
 use Time::HiRes      ();
 
@@ -54,11 +55,11 @@ sub init {
 
   if ($legacyNamespace) {
 
-    $globalNamespace  = ['stats'];
-    $counterNamespace = ['stats'];
-    $timerNamespace   = ['stats', 'timers'];
-    $gaugesNamespace  = ['stats', 'gauges'];
-    $setsNamespace    = ['stats', 'sets'];
+    $globalNamespace  = ["stats"];
+    $counterNamespace = ["stats"];
+    $timerNamespace   = ["stats", "timers"];
+    $gaugesNamespace  = ["stats", "gauges"];
+    $setsNamespace    = ["stats", "sets"];
 
   }
   else {
@@ -106,6 +107,12 @@ sub init {
   #$self->{graphiteStats}->{last_exception} = $startup_time;
 
   $self->{flushInterval} = $config->{flushInterval};
+  $self->{prefixStats} = $config->{prefixStats};
+
+  if (! $self->{prefixStats}) {
+    Carp::croak("config.prefixStats should not be blank/empty!");
+  }
+
 }
 
 sub flush {
@@ -180,17 +187,18 @@ sub flush_stats {
     $num_stats++;
   }
 
-  my @namespace = (@{ $self->{globalNamespace} }, "statsd");
+  my $g_pref = $self->{prefixStats};
+  my @namespace = (@{ $self->{globalNamespace} }, $g_pref);
 
   # Convert Time::HiRes format (µs) to ms
   my $calcTime = 1000 * Time::HiRes::tv_interval($startTime);
 
   if ($self->{legacyNamespace}) {
-    push @fstats, stat_int("statsd.numStats", $num_stats, $ts);
-    push @fstats, stat_float("stats.statsd.graphiteStats.calculationtime",
+    push @fstats, stat_int("${g_pref}.numStats", $num_stats, $ts);
+    push @fstats, stat_float("stats.${g_pref}.graphiteStats.calculationtime",
       $calcTime, $ts);
     for my $key (keys %{ $statsd_metrics }) {
-      push @fstats, stat_int("stats.statsd.$key", $statsd_metrics->{$key}, $ts);
+      push @fstats, stat_int("stats.${g_pref}.${key}", $statsd_metrics->{$key}, $ts);
     }
   }
   else {
@@ -213,11 +221,16 @@ sub flush_stats {
 sub global_stats {
   my ($self) = @_;
 
+  my $g_pref = $self->{prefixStats};                      # "statsd" by default
+  if (! $g_pref) {
+    Carp::croak("config.prefixStats is empty or invalid! (global_stats)");
+  }
+
   my $last_flush = $self->{lastFlush} || 0;
   my $last_exception = $self->{lastException} || 0;
   my $ts = time();
 
-  my @namespace = (@{ $self->{globalNamespace} }, 'statsd', 'graphiteStats');
+  my @namespace = (@{ $self->{globalNamespace} }, $g_pref, 'graphiteStats');
   my $namespace = join(".", @namespace);
 
   my $global_stats = [
@@ -303,9 +316,11 @@ sub stats_to_string {
   for (@{ $stat_list }) {
     my $attr = $_;
     my $stat = $attr->{stat};
-    my $val  = $attr->{value};
-    my $ts   = $attr->{time};
-    my $fmt  = exists $attr->{fmt} ? $attr->{fmt} : '%d';
+    my $val = $attr->{value};
+    next if ! defined $val;
+    my $ts = $attr->{time};
+    my $fmt = exists $attr->{fmt} ? $attr->{fmt} : '%d';
+    #warn "fmt=$fmt stat=$stat val=$val ts=$ts\n";
     $stat_string .= sprintf("%s $fmt %d\n", $stat, $val, $ts);
   }
   return $stat_string;

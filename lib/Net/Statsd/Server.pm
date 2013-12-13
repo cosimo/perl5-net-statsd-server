@@ -29,10 +29,10 @@ use constant {
   DEFAULT_CONFIG_FILE    => 'localConfig.js',
   DEFAULT_FLUSH_INTERVAL => 10000,
   DEFAULT_LOG_LEVEL      => 'info',
-  RECEIVE_BUFFER_MB      => 8,
+  RECEIVE_BUFFER_MB      => 8,                   # 0 = setsockopt disabled
 };
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 our $logger;
 
 # }}}
@@ -61,7 +61,7 @@ sub new {
         "bad_lines_seen" => 0,
       }
     },
-    metrics       => Net::Statsd::Server::Metrics->new(),
+    metrics       => undef,
 
     debugInt      => undef,
     flushInterval => undef,
@@ -104,13 +104,13 @@ sub _start_time_hi {
 sub config_defaults {
   return {
     "debug" => 0,
-    "debugInterval" => 10000,                  # ms
+    "debugInterval" => 10000,                   # ms
     "graphitePort"  => 2003,
     "port"          => 8125,
     "address"       => "0.0.0.0",
     "mgmt_port"     => 8126,
     "mgmt_address"  => "0.0.0.0",
-    "flushInterval" => DEFAULT_FLUSH_INTERVAL, # ms
+    "flushInterval" => DEFAULT_FLUSH_INTERVAL,  # ms
     #"keyFlush" => {
     #  "interval" => 10,                        # s
     #  "percent"  => 100,
@@ -120,8 +120,18 @@ sub config_defaults {
       "backend" => "stdout",
       "level"   => "LOG_INFO",
     },
-    "percentThreshold" => [ 90 ],
+
+    "prefixStats" => "statsd",
     "dumpMessages" => 0,
+
+    "deleteIdleStats" => 0,
+    #"deleteCounters"  => 0,
+    #"deleteGauges"    => 0,
+    #"deleteSets"      => 0,
+    #"deleteTimers"    => 0,
+
+    "percentThreshold" => [ 90 ],
+
     "backends" => [
       "Console",
     ],
@@ -167,26 +177,65 @@ sub config {
 sub clear_metrics {
   my ($self) = @_;
 
-  # Whether to just reset them to zero or to wipe them
-  my $del_counters = $self->config->{deleteCounters} // 0;
+  my $conf = $self->config;
 
-  my $counters = $self->{metrics}->{counters};
+  my $del_counters = $conf->{deleteCounters};
+  my $del_gauges   = $conf->{deleteGauges};
+  my $del_sets     = $conf->{deleteSets};
+  my $del_timers   = $conf->{deleteTimers};
+
+  # Metrics that are not seen in the interval won't
+  # be sent anymore. Enable this with 'deleteIdleStats'
+  my $del_idle = $conf->{deleteIdleStats} // 0;
+
+  if ($del_idle) {
+    $del_counters //= 1;
+    $del_gauges   //= 1;
+    $del_timers   //= 1;
+    $del_sets     //= 1;
+  }
+
+  # Whether to just reset them to zero or to wipe them
+  my $metrics = $self->{metrics};
   if ($del_counters) {
-    $self->{metrics}->{counters} = {};
+    $metrics->{counters} = {};
+    $metrics->{counter_rates} = {};
   }
   else {
-    $_ = 0 for values %{ $counters };
+    my $counters = $metrics->{counters};
+    my $counter_rates = $metrics->{counter_rates};
+    $_ = 0 for
+      values %{ $counters },
+      values %{ $counter_rates };
   }
 
-  my $timers = $self->{metrics}->{timers};
-  $_ = [] for values %{ $timers };
+  if ($del_timers) {
+    $metrics->{timers} = {};
+    $metrics->{timer_data} = {};
+  }
+  else {
+    my $timers = $metrics->{timers};
+    my $timer_data = $metrics->{timer_data};
+    $_ = [] for
+      values %{ $timers },
+      values %{ $timer_data };
+  }
 
-  # FIXME Nodejs statsd doesn't clear gauges??
-  #my $gauges = $self->{metrics}->{gauges};
-  #$_ = undef for values %{ $gauges };
+  if ($del_gauges) {
+    $metrics->{gauges} = {};
+  }
+  else {
+    my $gauges = $metrics->{gauges};
+    $_ = undef for values %{ $gauges };
+  }
 
-  my $sets = $self->{metrics}->{sets};
-  $_ = {} for values %{ $sets };
+  if ($del_sets) {
+    $metrics->{sets} = {};
+  }
+  else {
+    my $sets = $metrics->{sets};
+    $_ = {} for values %{ $sets };
+  }
 
   return;
 }
@@ -219,8 +268,9 @@ sub handle_client_packet {
   my $metrics  = $self->{metrics};
   my $counters = $metrics->{counters};
   my $stats    = $self->{stats};
+  my $g_pref   = $config->{prefixStats};
 
-  $counters->{"statsd.packets_received"}++;
+  $counters->{"${g_pref}.packets_received"}++;
 
   # TODO backendEvents.emit('packet', msg, rinfo);
 
@@ -255,7 +305,7 @@ sub handle_client_packet {
 
       if (! defined $fields[1] || $fields[1] eq "") {
         $logger->(warn => "Bad line: $bits[$i] in msg \"$m\"");
-        $counters->{"statsd.bad_lines_seen"}++;
+        $counters->{"${g_pref}.bad_lines_seen"}++;
         $stats->{"messages"}->{"bad_lines_seen"}++;
         next;
       }
@@ -297,7 +347,7 @@ sub handle_client_packet {
           }
           else {
             $logger->(warn => "Bad line: $bits[$i] in msg \"$m\"; has invalid sample rate");
-            $counters->{"statsd.bad_lines_seen"}++;
+            $counters->{"${g_pref}.bad_lines_seen"}++;
             $stats->{"messages"}->{"bad_lines_seen"}++;
             next;
           }
@@ -616,6 +666,13 @@ sub flush_top_keys {
 
 }
 
+sub init_metrics {
+  my ($self) = @_;
+  my $config = $self->config;
+  $self->{metrics} = Net::Statsd::Server::Metrics->new($config);
+  return $self->{metrics};
+}
+
 sub start_server {
   my ($self, $config) = @_;
 
@@ -632,6 +689,7 @@ sub start_server {
   my $mgmt_port = $config->{mgmt_port}    || 8126;
 
   $self->init_backends();
+  $self->init_metrics();
 
   # Statsd clients interface (UDP)
   $self->{server} = AnyEvent::Handle::UDP->new(
@@ -647,9 +705,11 @@ sub start_server {
   # Bump up SO_RCVBUF on UDP socket, to buffer up incoming
   # UDP packets, to avoid significant packet loss under load.
   # Read more: http://bit.ly/10eeFoE
-  setsockopt($self->{server}->fh, SOL_SOCKET,
-    SO_RCVBUF, RECEIVE_BUFFER_MB * 1048576)
-      or die "Couldn't set SO_RCVBUF: $!";
+  if (RECEIVE_BUFFER_MB > 0) {
+    setsockopt($self->{server}->fh, SOL_SOCKET,
+      SO_RCVBUF, RECEIVE_BUFFER_MB * 1048576)
+        or die "Couldn't set SO_RCVBUF: $!";
+  }
 
   # Management interface (TCP, for 'stats' command, etc...)
   $self->{mgmtServer} = AnyEvent::Socket::tcp_server $mgmt_host, $mgmt_port, sub {
@@ -729,7 +789,7 @@ Background information here:
 =head1 MOTIVATION
 
 Why did I do this? There's already a gazillion implementations of
-statsd. The original one from Cal Henderson/Flickr was not released
+statsd. The original Perl one from Cal Henderson/Flickr was not released
 as a complete working software AFAIK:
 
   https://github.com/iamcal/Flickr-StatsD
@@ -774,6 +834,9 @@ There is a C<bin/statsd> script included in the CPAN
 distribution, together with a bunch of example configuration
 files that should get you up and running in no time.
 
+This statsd script basically does exactly what the Etsy
+statsd javascript version does. It's a drop-in replacement.
+
 I have tried to keep compatibility with the node.js version
 of statsd as much as I could, so you can literally use the
 same configuration files, bar a conversion from javascript
@@ -783,6 +846,22 @@ You can also consult the node-statsd documentation, up
 on Github as well:
 
   https://github.com/etsy/statsd
+
+=head1 CONFIGURATION
+
+To have an idea of the compability between the Javascript
+statsd server and this Perl version, you can have a look
+at the example configuration file bundled with this distribution
+under C<bin/localConfig.js>, or here:
+
+  https://github.com/cosimo/perl5-net-statsd-server/blob/master/bin/localConfig.js
+
+You will find all the Perl statsd supported (known working)
+configuration keys documented there. If an option is supported
+and working, it will always behave exactly as the Javascript
+version of statsd, unless there's bugs of course.
+
+B<Anything not documented there will probably not work at all>.
 
 =head1 AUTHORS
 

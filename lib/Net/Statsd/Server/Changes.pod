@@ -2,6 +2,20 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.11  13th December 2013
+
+  Added implementation for the following configuration directives:
+    deleteIdleStats, deleteGauges, deleteSets, prefixStats.
+    Both deleteTimers and deleteCounters were supposed to work
+    before 0.11 too.
+
+  Improved documentation. Should be clear now how to know what
+    options are actually supported and what options are not.
+
+  Improved integration tests. Now it's even easier to run
+    Net::Statsd::Server integration tests against the nodejs
+    version of statsd to verify full compatibility.
+
 =head2 Changes in Net::Statsd::Server 0.10  10th February 2013
 
   Fixed SO_RCVBUF on Mac OS X, where it's apparently not possible
