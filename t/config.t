@@ -29,7 +29,7 @@ ok ref $c eq 'HASH' && keys %{$c} > 0,
 is $c->{prefixStats}, 'statsd',
   'Defaults for missing keys are applied correctly';
 
-is $c->{graphitePort}, 2003,
+is $c->{graphitePort}, 40003,
   'A random value from the config file was loaded';
 
 is $c->{dumpMessages}, '',

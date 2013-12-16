@@ -16,7 +16,7 @@
 
   "backends": [ "./backends/console", "./backends/graphite" ],
   "graphiteHost": "localhost",
-  "graphitePort": 2003,
+  "graphitePort": 40003,
   "graphite": {
     "legacyNamespace": false
   }

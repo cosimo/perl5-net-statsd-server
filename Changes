@@ -1,6 +1,13 @@
 NAME
     Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+  Changes in Net::Statsd::Server 0.12  16th December 2013
+      Fixed (hopefully) problems reported by CPAN testers:
+        * Failing to setsockopt(SO_RCVBUF) is no more a fatal exception.
+          We will just continue and emit a warning instead.
+        * Some CPAN testers appear to have a running graphite on their
+          systems, so use a not so common port instead of 2003.
+
   Changes in Net::Statsd::Server 0.11  13th December 2013
       Added implementation for the following configuration directives:
         deleteIdleStats, deleteGauges, deleteSets, prefixStats.

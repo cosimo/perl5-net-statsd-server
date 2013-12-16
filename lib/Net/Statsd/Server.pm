@@ -27,12 +27,12 @@ use Net::Statsd::Server::Metrics;
 use constant {
   DEBUG                  => 0,
   DEFAULT_CONFIG_FILE    => 'localConfig.js',
-  DEFAULT_FLUSH_INTERVAL => 10000,
+  DEFAULT_FLUSH_INTERVAL => 10_000,
   DEFAULT_LOG_LEVEL      => 'info',
   RECEIVE_BUFFER_MB      => 8,                   # 0 = setsockopt disabled
 };
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 our $logger;
 
 # }}}
@@ -706,9 +706,11 @@ sub start_server {
   # UDP packets, to avoid significant packet loss under load.
   # Read more: http://bit.ly/10eeFoE
   if (RECEIVE_BUFFER_MB > 0) {
-    setsockopt($self->{server}->fh, SOL_SOCKET,
-      SO_RCVBUF, RECEIVE_BUFFER_MB * 1048576)
-        or die "Couldn't set SO_RCVBUF: $!";
+      # On some systems this could fail (cpantesters reports)
+      # Have it emit a warning instead of throwing an exception
+      setsockopt($self->{server}->fh, SOL_SOCKET,
+        SO_RCVBUF, RECEIVE_BUFFER_MB * 1048576)
+          or warn "Couldn't set SO_RCVBUF: $!";
   }
 
   # Management interface (TCP, for 'stats' command, etc...)
