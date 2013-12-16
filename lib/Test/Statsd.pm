@@ -8,7 +8,7 @@ use AnyEvent;
 use AnyEvent::Strict;
 use AnyEvent::Handle;
 use AnyEvent::Socket;
-use IO::Socket::INET;
+use IO::Socket::INET ();
 use Time::HiRes;
 
 sub new {
