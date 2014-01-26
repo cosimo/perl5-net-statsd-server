@@ -2,6 +2,16 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.13   26th January 2014
+
+  Added support for Perl 5.8, so now Net::Statsd::Server should
+    in theory work on 5.8 too, thanks to RJBS for the related patch.
+    RJBS also reported N::S::S to work on Solaris.
+
+  Fixed RT#85165, now the code is indicated as Perl_5 licence.
+    Problem there was my failed understanding of the interaction
+    between hardcoded Makefile.PL and dzil.
+
 =head2 Changes in Net::Statsd::Server 0.12  16th December 2013
 
   Fixed (hopefully) problems reported by CPAN testers:

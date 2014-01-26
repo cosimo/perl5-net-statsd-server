@@ -2,6 +2,8 @@
 bin/benchmarkConfig\.js
 bin/debugConfig\.js
 bin/profiles
+bin/output\.txt.*
+bin/parse\.pl
 t-statsd
 blib
 pm_to_blib

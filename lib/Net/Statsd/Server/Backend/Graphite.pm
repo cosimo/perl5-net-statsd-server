@@ -1,5 +1,5 @@
 #
-# Flush stats to graphite (http://graphite.wikidot.com/).
+# ABSTRACT: Flushes stats to graphite (http://graphite.wikidot.com/).
 #
 # To enable this backend, include 'graphite' in the backends
 # configuration array:
