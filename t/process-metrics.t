@@ -20,7 +20,7 @@ use Test::More;
 
 use Net::Statsd::Server::Metrics;
 
-plan tests => 34;
+plan tests => 35;
 
 sub setup { #:Setup
   my $m = Net::Statsd::Server::Metrics->new({ prefixStats => 'statsd' });
@@ -41,6 +41,15 @@ sub counters_have_correct_rate { #:Test(1)
   my $processed = $metrics->process(100);
   is($processed->{counter_rates}->{a}, 20,
     'Counter rate for 100ms should multiply 10x');
+}
+
+sub gauges_are_recorded {
+  my $metrics = setup();
+  $metrics->{gauges}->{temperature} = 37.5;
+  my $processed = $metrics->process(100);
+  my $gauges_data = $processed->{gauges};
+  is($gauges_data->{temperature}, 37.5,
+    'Gauges data is recorded correctly');
 }
 
 sub timers_handle_empty {
@@ -174,6 +183,7 @@ sub statsd_metrics_exist {
 
 counters_have_stats_count();
 counters_have_correct_rate();
+gauges_are_recorded();
 timers_handle_empty();
 timers_single_time();
 timers_multiple_times();

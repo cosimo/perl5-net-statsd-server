@@ -224,10 +224,6 @@ sub clear_metrics {
   if ($del_gauges) {
     $metrics->{gauges} = {};
   }
-  else {
-    my $gauges = $metrics->{gauges};
-    $_ = undef for values %{ $gauges };
-  }
 
   if ($del_sets) {
     $metrics->{sets} = {};

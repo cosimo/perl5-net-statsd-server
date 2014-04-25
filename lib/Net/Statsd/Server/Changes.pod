@@ -2,6 +2,12 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.14   25th April 2014
+
+  Fixed problem with gauges that were erroneously deleted either
+    when deleteIdleStats was false, or deleteIdleStats was true
+    but deleteGauges was false.
+
 =head2 Changes in Net::Statsd::Server 0.13   26th January 2014
 
   Added support for Perl 5.8, so now Net::Statsd::Server should
