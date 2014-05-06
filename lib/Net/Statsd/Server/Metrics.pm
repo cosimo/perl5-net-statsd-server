@@ -59,64 +59,97 @@ sub process {
   # percentile values (90%, 95%, ...)
   for my $key (keys %{ $timers }) {
 
-    next unless @{ $timers->{$key} } > 0;
-
     my $current_timer_data = {};
 
-    # Sort timer samples by value
-    my @values = @{ $timers->{$key} };
-    @values = sort { $a <=> $b } @values;
+    if (@{ $timers->{$key} } > 0) {
 
-    my $count = @values;
-    my $min = $values[0];
-    my $max = $values[$#values];
+      # Sort timer samples by value
+      my @values = @{ $timers->{$key} };
+      @values = sort { $a <=> $b } @values;
 
-    # We don't want to iterate at all if there's just 1 value
-    my $cumulativeValues = [ $min ];
-    for (my $i = 1; $i < $count; $i++) {
-      my $cmlVal = $values[$i] + $cumulativeValues->[$i - 1];
-      push @{ $cumulativeValues }, $values[$i] + $cumulativeValues->[$i - 1];
-    }
+      my $count = @values;
+      my $min = $values[0];
+      my $max = $values[$#values];
 
-    my $sum = my $mean = $min;
-    my $maxAtThreshold = $max;
+      # We don't want to iterate at all if there's just 1 value
+      my $cumulativeValues = [ $min ];
+      my $cumulSumSquaresValues = [ $min * $min ];
 
-    for my $pct (@{ $pctThreshold }) {
-
-      if ($count > 1) {
-        # Pay attention to the rounding: should behave the same
-        # as etsy's statsd, that's using a Math.round(x).
-        # int(x + 0.5) does this.
-        my $numInThreshold = int(($pct / 100 * $count) + 0.5);
-        $maxAtThreshold = $values[$numInThreshold - 1];
-        $sum = $cumulativeValues->[$numInThreshold - 1];
-        $mean = $sum / $numInThreshold;
+      for (my $i = 1; $i < $count; $i++) {
+        my $cmlVal = $values[$i] + $cumulativeValues->[$i - 1];
+        push @{ $cumulativeValues }, $values[$i] + $cumulativeValues->[$i - 1];
+        push @{ $cumulSumSquaresValues }, ($values[$i] * $values[$i])
+          + $cumulSumSquaresValues->[$i - 1];
       }
 
-      my $clean_pct = "" . $pct;
-      $clean_pct =~ s{\.}{_}g;
+      my $sum = my $mean = $min;
+      my $sumSquares = $min * $min;
+      my $maxAtThreshold = $max;
 
-      $current_timer_data->{"mean_${clean_pct}"}  = $mean;
-      $current_timer_data->{"upper_${clean_pct}"} = $maxAtThreshold;
-      $current_timer_data->{"sum_${clean_pct}"}   = $sum;
+      for my $pct (@{ $pctThreshold }) {
+
+        my $numInThreshold = $count;
+
+        if ($count > 1) {
+          # Pay attention to the rounding: should behave the same
+          # as etsy's statsd, that's using a Math.round(x).
+          # int(x + 0.5) does this.
+          $numInThreshold = int(($pct / 100 * $count) + 0.5);
+          next if $numInThreshold == 0;
+
+          if ($pct > 0) {
+            $maxAtThreshold = $values[$numInThreshold - 1];
+            $sum = $cumulativeValues->[$numInThreshold - 1];
+            $sumSquares = $cumulSumSquaresValues->[$numInThreshold - 1];
+          }
+          else {
+            $maxAtThreshold = $values[$count - $numInThreshold];
+            $sum = $cumulativeValues->[$count - 1] - $cumulativeValues->[$count - $numInThreshold - 1];
+            $sumSquares = $cumulSumSquaresValues->[$count - 1] - $cumulSumSquaresValues->[$count - $numInThreshold - 1];
+          }
+          $mean = $sum / $numInThreshold;
+        }
+
+        my $clean_pct = "" . $pct;
+        $clean_pct =~ s{\.}{_}g;
+        $clean_pct =~ s{-}{top}g;
+        $current_timer_data->{"count_${clean_pct}"} = $numInThreshold;
+        $current_timer_data->{"mean_${clean_pct}"} = $mean;
+        $current_timer_data->{($pct > 0 ? "upper_" : "lower_") . $clean_pct} = $maxAtThreshold;
+        $current_timer_data->{"sum_${clean_pct}"} = $sum;
+        $current_timer_data->{"sum_squares_${clean_pct}"} = $sumSquares;
+      }
+
+      $sum = $cumulativeValues->[$count - 1];
+      $sumSquares = $cumulSumSquaresValues->[$count - 1];
+      $mean = $sum / $count;
+
+      # Calculate standard deviation
+      my $sumOfDiffs = 0;
+      for (0 .. $count - 1) {
+         $sumOfDiffs += ($values[$_] - $mean) ** 2;
+      }
+      my $stddev = sqrt($sumOfDiffs / $count);
+      my $mid = int($count / 2);
+      my $median = $count % 2
+        ? $values[$mid]
+        : ($values[$mid - 1] + $values[$mid]) / 2;
+
+      $current_timer_data->{std} = $stddev;
+      $current_timer_data->{upper} = $max;
+      $current_timer_data->{lower} = $min;
+      $current_timer_data->{count} = $count;
+      $current_timer_data->{count_ps} = $count / $flush_interval;
+      $current_timer_data->{sum} = $sum;
+      $current_timer_data->{sum_squares} = $sumSquares;
+      $current_timer_data->{mean} = $mean;
+      $current_timer_data->{median} = $median;
+
     }
-
-    $sum = $cumulativeValues->[$count - 1];
-    $mean = $sum / $count;
-
-    # Calculate standard deviation
-    my $sumOfDiffs = 0;
-    for (0 .. $count - 1) {
-       $sumOfDiffs += ($values[$_] - $mean) ** 2;
+    else {
+      $current_timer_data->{count} = 0;
+      $current_timer_data->{count_ps} = 0;
     }
-    my $stddev = sqrt($sumOfDiffs / $count);
-
-    $current_timer_data->{std} = $stddev;
-    $current_timer_data->{upper} = $max;
-    $current_timer_data->{lower} = $min;
-    $current_timer_data->{count} = $count;
-    $current_timer_data->{sum} = $sum;
-    $current_timer_data->{mean} = $mean;
 
     $timer_data->{$key} = $current_timer_data;
   }

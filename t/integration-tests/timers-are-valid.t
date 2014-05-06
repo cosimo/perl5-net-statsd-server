@@ -8,7 +8,7 @@ use FindBin qw($Bin);
 use Test::Statsd;
 use Test::More;
 
-plan tests => 3;
+plan tests => 5;
 
 my $t = Test::Statsd->new({
   binary => $ENV{STATSD_BINARY} || qq{$^X $Bin/../../bin/statsd},
@@ -34,3 +34,9 @@ is($stats->{"stats.statsd.numStats"} => 3,
 
 ok($stats->{"stats.timers.a_test_value.mean_90"} == $test_value,
   "stats.timers.a_test_value.mean_90 should be ${test_value}");
+
+ok($stats->{"stats.timers.a_test_value.count"} == 1.0,
+  "stats.timers.a_test_value.count is 1 since we got one value");
+
+ok($stats->{"stats.timers.a_test_value.count_ps"} == 1.0,
+  "stats.timers.a_test_value.count_ps is 1 since we got one value per second");

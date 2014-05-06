@@ -1,6 +1,11 @@
 NAME
     Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+  Changes in Net::Statsd::Server 0.16    6th May 2014
+      Implemented new timer attributes: count_ps, median, sum_squares.
+
+    Release of 0.15 never happened.
+
   Changes in Net::Statsd::Server 0.14   25th April 2014
       Fixed problem with gauges that were erroneously deleted either
         when deleteIdleStats was false, or deleteIdleStats was true
