@@ -2,6 +2,11 @@
 
 Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+=head2 Changes in Net::Statsd::Server 0.17    13th June 2014
+
+  Fixed percentThreshold configuration directive. It was being ignored,
+    falling back to the default 90%. Added a new integration test case.
+
 =head2 Changes in Net::Statsd::Server 0.16    6th May 2014
 
   Implemented new timer attributes: count_ps, median, sum_squares.

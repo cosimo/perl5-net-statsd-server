@@ -28,6 +28,12 @@ sub new {
     timer_data => {},
     pctThreshold => [ 90 ],
   };
+
+  if (exists $config->{percentThreshold}
+      && ref $config->{percentThreshold} eq "ARRAY") {
+    $self->{pctThreshold} = $config->{percentThreshold};
+  }
+
   bless $self, $class;
 }
 

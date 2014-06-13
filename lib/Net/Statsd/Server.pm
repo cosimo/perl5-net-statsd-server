@@ -32,7 +32,7 @@ use constant {
   RECEIVE_BUFFER_MB      => 8,                   # 0 = setsockopt disabled
 };
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 our $logger;
 
 # }}}
