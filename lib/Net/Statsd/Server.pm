@@ -695,8 +695,7 @@ sub start_server {
     on_recv => sub {
       my ($data, $ae_handle, $client_addr) = @_;
       #$logger->(debug => "Got data=$data self=$self");
-      my $reply = $self->handle_client_packet($data);
-      $ae_handle->push_send($reply, $client_addr);
+      $self->handle_client_packet($data);
     },
   );
 
