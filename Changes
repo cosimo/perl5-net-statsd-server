@@ -1,10 +1,19 @@
 NAME
     Net::Statsd::Server::Changes - Change history for Net::Statsd::Server
 
+  Changes in Net::Statsd::Server 0.19   26th February 2015
+      Just an update to the Changes file that was missed in 0.18.
+      0.18 and 0.19 are 100% the same release, except a Changes file.
+     
+  Changes in Net::Statsd::Server 0.18   26th February 2015
+      Fixed (removing it) useless and potentially problematic send call
+        towards clients. It was sending a timestamp. Statsd server shouldn't
+        even attempt to send anything back to clients.
+
   Changes in Net::Statsd::Server 0.16    6th May 2014
       Implemented new timer attributes: count_ps, median, sum_squares.
 
-    Release of 0.15 never happened.
+      Release of 0.15 never happened.
 
   Changes in Net::Statsd::Server 0.14   25th April 2014
       Fixed problem with gauges that were erroneously deleted either
