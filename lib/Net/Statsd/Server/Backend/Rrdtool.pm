@@ -15,7 +15,7 @@
 #   path:          root path of the RRD files (default: '/tmp')
 #
 
-package Net::Statsd::Server::Backend::Rrd;
+package Net::Statsd::Server::Backend::Rrdtool;
 
 use 5.010;
 use strict;
@@ -28,11 +28,11 @@ our $CONFIG = { path => '/tmp' };
 use Data::Dumper;
 use File::Basename;
 use File::Path;
-use Path::Tiny;
-use RRD::Simple;
+use File::Spec;
+# Not on CPAN, usually provided by 'rrdtool'
 use RRDs;
 
-my $debug;
+my $debug = 0;
 my $flushInterval;
 my $rrdPath;
 my $stats = {};
@@ -41,7 +41,7 @@ sub _dir_file {
   my ($key) = @_;
   my @key = split m{\.}, $key;
   my $filename = join('/', @key) . '.rrd';
-  my $fullfile = path($CONFIG->{path}, $filename);
+  my $fullfile = File::Spec->catfile($CONFIG->{path}, $filename);
   my $basename = File::Basename::basename($filename);
   my $folder = File::Basename::dirname($fullfile);
   #warn "folder=$folder base=$basename full=$fullfile\n";
@@ -56,6 +56,15 @@ sub write_counter {
 sub write_gauge {
   my ($self, @args) = @_;
   return $self->_write_rrd('GAUGE', @args);
+}
+
+sub _ds_name {
+  my ($self, $name) = @_;
+  if ($name) {
+    $name =~ s{\.rrd$}{};
+  }
+  my $rrd_name = substr($name, 0, 19);
+  return $rrd_name;
 }
 
 # With RRDs, so we can set our statsd-biased defaults
@@ -74,12 +83,13 @@ sub _rrd_create {
   my %statsd_to_rrd_type = (
     COUNTER => 'ABSOLUTE',
     GAUGE   => 'GAUGE',
-    TIMER   => 'GAUGE',    # Sadly, no timer type in RRD
+    TIMER   => 'GAUGE',                          # Sadly, no timer type in RRD
   );
 
   my $ds_type = $statsd_to_rrd_type{$type};
   my $min_value = $ds_type eq 'ABSOLUTE' ? 0 : 'U';
   my $max_value = 'U';
+  my $ds_name = $self->_ds_name($ds_name);
 
   my @rrd_spec = (
     '-b' => "-${flush_interval}s",
@@ -89,7 +99,7 @@ sub _rrd_create {
   my $xff = $CONFIG->{xff} || 0.5;
 
   my @rra = (
-    [ 'AVERAGE', $xff, 10, 1 ],    # 10=seconds, 1=days
+    [ 'AVERAGE', $xff, 10, 1 ],                  # 10=seconds, 1=days
     [ 'AVERAGE', $xff, 60, 30 ],
     [ 'AVERAGE', $xff, 300, 2 * 365 ],
   );
@@ -126,14 +136,13 @@ sub _write_rrd {
 
   my ($folder, $basename, $full_filename) = _dir_file($key);
 
-  my $stat_name = $basename;
-  $stat_name =~ s{\.rrd$}{};
-  $stat_name = substr($stat_name, 0, 20);
-
   if (! -d $folder) {
     File::Path::mkpath($folder) or
       die "Can't create folder '$folder': $!";
   }
+
+  my $stat_name = $basename;
+  $stat_name = $self->_ds_name($stat_name);
 
   $self->_rrd_create($full_filename, $stat_name, $type);
 
@@ -141,8 +150,24 @@ sub _write_rrd {
   warn "update_rrd: $stat_name = $value (t=$timestamp, $full_filename)\n"
     if $debug;
 
-  my $rrd = RRD::Simple->new(file => $full_filename);
-  return $rrd->update($full_filename, $timestamp, $stat_name => $value);
+  # It is entirely possible that an RRD update fails.
+  # A common reason is that metric names longer than 20 chars
+  # are not accepted by RRD.
+  my $ok;
+  eval {
+    RRDs::update($full_filename, '--template', $stat_name, "${timestamp}:${value}");
+    if (my $err = RRDs::error()) {
+      die $err;
+    }
+    else {
+      $ok = 1;
+    }
+  } or do {
+    warn "Failed to update $stat_name RRD: $@"
+      if $debug;
+  };
+
+  return $ok;
 }
 
 sub convert_metrics_to_rrd {
@@ -219,7 +244,7 @@ sub init {
   my ($self, $startup_time, $config, $events) = @_;
 
   $debug = $config->{debug};
-  my $rrd_config = $config->{rrd} || {};
+  my $rrd_config = $config->{rrdtool} || {};
 
   my @expected_config_attributes = ('path', 'xff');
   for (@expected_config_attributes) {
