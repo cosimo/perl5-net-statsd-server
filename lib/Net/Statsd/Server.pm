@@ -283,8 +283,9 @@ sub handle_client_packet {
     my @bits = split(":", $m);
     my $key = shift @bits;
 
+    # Keep [,=] to allow sending of tags. Handy for Influxdb integration.
     $key =~ y{/ }{_-}s;
-    $key =~ y{a-zA-Z0-9_\-\.}{}cd;
+    $key =~ y{a-zA-Z0-9_\-\.,=}{}cd;
 
     # Not very clear here. Etsy's code was doing this differently
     if ($must_count_keys) {
